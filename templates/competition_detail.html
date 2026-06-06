@@ -166,9 +166,12 @@
       <h2>scoreboard</h2>
       <p class="muted" data-scoreboard-summary>
         {% if scoreboard_total %}
-        Showing top {{ scoreboard|length }} of {{ scoreboard_total }} players.
+        Showing top {{ scoreboard_visible_count }} of {{ scoreboard_total }} players.
         {% else %}
-        No solves yet.
+        No public solves yet.
+        {% endif %}
+        {% if manager and hidden_scoreboard_total %}
+        {{ hidden_scoreboard_total }} hidden player{% if hidden_scoreboard_total != 1 %}s{% endif %} visible to managers.
         {% endif %}
       </p>
       {% if freeze_cutoff %}<p class="muted">Scoreboard is frozen from {{ freeze_cutoff|local_time }} until the competition ends.</p>{% endif %}
@@ -185,27 +188,43 @@
   <div class="table-wrap">
     <table>
       <thead><tr><th>#</th><th>Player</th><th>Score</th><th>Solves</th><th>Last solve</th>{% if manager %}<th>Manage</th>{% endif %}</tr></thead>
-      <tbody id="competition-scoreboard-preview" data-scoreboard-body {% if manager %}data-scoreboard-manage="1" data-hide-url-template="/competitions/{{ competition.id }}/hidden-users/__USER_ID__/hide" data-next-url="/competitions/{{ competition.id }}" data-csrf="{{ request.csrf_token }}"{% endif %}>
+      <tbody id="competition-scoreboard-preview" data-scoreboard-body {% if manager %}data-scoreboard-manage="1" data-hide-url-template="/competitions/{{ competition.id }}/hidden-users/__USER_ID__/hide" data-unhide-url-template="/competitions/{{ competition.id }}/hidden-users/__USER_ID__/unhide" data-next-url="/competitions/{{ competition.id }}" data-csrf="{{ request.csrf_token }}"{% endif %}>
       {% for row in scoreboard %}
-        <tr data-search-item>
-          <td>{{ loop.index }}</td>
-          <td><a href="/users/{{ row.username }}">{{ row.username }}</a></td>
+        <tr data-search-item {% if row.is_hidden %}class="scoreboard-hidden-row"{% endif %}>
+          <td>{% if row.is_hidden %}<span class="badge closed">hidden</span>{% else %}{{ row.rank }}{% endif %}</td>
+          <td>
+            <a href="/users/{{ row.username }}">{{ row.username }}</a>
+            {% if row.is_hidden %}
+            <div class="muted">
+              Hidden{% if row.hidden_by_name %} by <a href="/users/{{ row.hidden_by_name }}">{{ row.hidden_by_name }}</a>{% endif %}{% if row.hidden_at %} · {{ row.hidden_at|local_time }}{% endif %}
+            </div>
+            {% if row.hidden_reason %}<div class="muted">{{ row.hidden_reason }}</div>{% endif %}
+            {% endif %}
+          </td>
           <td>{{ row.score }}</td>
           <td>{{ row.solved_count }}</td>
           <td>{{ row.last_solve|local_time }}</td>
           {% if manager %}
           <td>
+            {% if row.is_hidden %}
+            <form method="post" action="/competitions/{{ competition.id }}/hidden-users/{{ row.user_id }}/unhide" class="inline-form">
+              {{ csrf_input() }}
+              <input type="hidden" name="next" value="/competitions/{{ competition.id }}">
+              <button class="button small primary" type="submit"><i class="fa-solid fa-user-check"></i> Reveal</button>
+            </form>
+            {% else %}
             <form method="post" action="/competitions/{{ competition.id }}/hidden-users/{{ row.user_id }}/hide" class="inline-form">
               {{ csrf_input() }}
               <input type="hidden" name="reason" value="Hidden from scoreboard">
               <input type="hidden" name="next" value="/competitions/{{ competition.id }}">
               <button class="button small danger" type="submit"><i class="fa-solid fa-ban"></i> Hide</button>
             </form>
+            {% endif %}
           </td>
           {% endif %}
         </tr>
       {% else %}
-        <tr><td colspan="{% if manager %}6{% else %}5{% endif %}" class="muted">No solves yet.</td></tr>
+        <tr><td colspan="{% if manager %}6{% else %}5{% endif %}" class="muted">No scoreboard rows yet.</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -383,45 +402,6 @@
         </tr>
       {% else %}
         <tr><td colspan="4" class="muted">No collaborators have accepted yet.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-{% endif %}
-
-{% if manager %}
-<section class="page-section">
-  <div class="split">
-    <div>
-      <h2>player moderation</h2>
-      <p class="muted">Hidden players cannot submit, download live dist files, or appear on the scoreboard.</p>
-    </div>
-    <div class="action-row align-end">
-      <input data-list-search="#competition-hidden-users" maxlength="80" placeholder="Search hidden users">
-    </div>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>User</th><th>Reason</th><th>Hidden by</th><th>Hidden at</th><th>Submissions</th><th></th></tr></thead>
-      <tbody id="competition-hidden-users" data-preview-list data-preview-limit="{{ list_preview_limit }}">
-      {% for user in hidden_users %}
-        <tr data-search-item>
-          <td><a href="/users/{{ user.username }}">{{ user.username }}</a><div class="muted">{{ user.email }}</div></td>
-          <td class="wide-cell">{{ user.reason or '-' }}</td>
-          <td>{{ user.hidden_by_name or 'system' }}</td>
-          <td>{{ user.created_at|local_time }}</td>
-          <td>{{ user.submission_count }}</td>
-          <td>
-            <form method="post" action="/competitions/{{ competition.id }}/hidden-users/{{ user.user_id }}/unhide" class="inline-form">
-              {{ csrf_input() }}
-              <input type="hidden" name="next" value="/competitions/{{ competition.id }}">
-              <button class="button small primary" type="submit"><i class="fa-solid fa-user-check"></i> Reveal</button>
-            </form>
-          </td>
-        </tr>
-      {% else %}
-        <tr><td colspan="6" class="muted">No hidden users.</td></tr>
       {% endfor %}
       </tbody>
     </table>

@@ -125,25 +125,52 @@ function renderScoreboard(payload) {
   if (!board || !Array.isArray(payload.scoreboard)) return;
   const managed = board.dataset.scoreboardManage === "1";
   const colspan = managed ? 6 : 5;
-  const hideCell = (row) => {
-    if (!managed || !board.dataset.hideUrlTemplate || !board.dataset.csrf) return "";
-    const action = board.dataset.hideUrlTemplate.replace("__USER_ID__", encodeURIComponent(String(row.user_id)));
+  const controlCell = (row) => {
+    if (!managed || !board.dataset.csrf) return "";
+    const template = row.is_hidden ? board.dataset.unhideUrlTemplate : board.dataset.hideUrlTemplate;
+    if (!template) return "";
+    const action = template.replace("__USER_ID__", encodeURIComponent(String(row.user_id)));
     const nextInput = board.dataset.nextUrl ? `<input type="hidden" name="next" value="${escapeHtml(board.dataset.nextUrl)}">` : "";
-    return `<td><form method="post" action="${escapeHtml(action)}" class="inline-form"><input type="hidden" name="_csrf" value="${escapeHtml(board.dataset.csrf)}"><input type="hidden" name="reason" value="Hidden from scoreboard">${nextInput}<button class="button small danger" type="submit"><i class="fa-solid fa-ban"></i> Hide</button></form></td>`;
+    const reasonInput = row.is_hidden ? "" : '<input type="hidden" name="reason" value="Hidden from scoreboard">';
+    const buttonClass = row.is_hidden ? "primary" : "danger";
+    const icon = row.is_hidden ? "fa-user-check" : "fa-ban";
+    const label = row.is_hidden ? "Reveal" : "Hide";
+    return `<td><form method="post" action="${escapeHtml(action)}" class="inline-form"><input type="hidden" name="_csrf" value="${escapeHtml(board.dataset.csrf)}">${reasonInput}${nextInput}<button class="button small ${buttonClass}" type="submit"><i class="fa-solid ${icon}"></i> ${label}</button></form></td>`;
+  };
+  const rankCell = (row, index) => {
+    if (row.is_hidden) return '<span class="badge closed">hidden</span>';
+    return escapeHtml(row.rank ?? index + 1);
+  };
+  const playerCell = (row) => {
+    let content = userProfileLink(row.username);
+    if (row.is_hidden) {
+      const hiddenBy = row.hidden_by_name ? ` by ${userProfileLink(row.hidden_by_name)}` : "";
+      const hiddenAt = row.hidden_at ? ` - ${localTime(row.hidden_at)}` : "";
+      content += `<div class="muted">Hidden${hiddenBy}${hiddenAt}</div>`;
+      if (row.hidden_reason) {
+        content += `<div class="muted">${escapeHtml(row.hidden_reason)}</div>`;
+      }
+    }
+    return content;
   };
   if (payload.scoreboard.length === 0) {
-    board.innerHTML = `<tr><td colspan="${colspan}" class="muted">No solves yet.</td></tr>`;
+    board.innerHTML = `<tr><td colspan="${colspan}" class="muted">No scoreboard rows yet.</td></tr>`;
   } else {
     board.innerHTML = payload.scoreboard.map((row, index) => (
-      `<tr data-search-item><td>${index + 1}</td><td>${userProfileLink(row.username)}</td><td>${row.score}</td><td>${row.solved_count}</td><td>${localTime(row.last_solve)}</td>${hideCell(row)}</tr>`
+      `<tr data-search-item${row.is_hidden ? ' class="scoreboard-hidden-row"' : ""}><td>${rankCell(row, index)}</td><td>${playerCell(row)}</td><td>${escapeHtml(row.score)}</td><td>${escapeHtml(row.solved_count)}</td><td>${localTime(row.last_solve)}</td>${controlCell(row)}</tr>`
     )).join("");
   }
   const total = Number(payload.scoreboard_total ?? payload.scoreboard.length);
   const limit = Number(payload.scoreboard_limit ?? payload.scoreboard.length);
-  const shown = Math.min(payload.scoreboard.length, limit, total);
+  const hidden = Number(payload.hidden_scoreboard_total ?? 0);
+  const shown = Math.min(payload.scoreboard.filter((row) => !row.is_hidden).length, limit, total);
   const summary = document.querySelector("[data-scoreboard-summary]");
   if (summary) {
-    summary.textContent = total > 0 ? `Showing top ${shown} of ${total} players.` : "No solves yet.";
+    let text = total > 0 ? `Showing top ${shown} of ${total} players.` : "No public solves yet.";
+    if (managed && hidden > 0) {
+      text += ` ${hidden} hidden player${hidden === 1 ? "" : "s"} visible to managers.`;
+    }
+    summary.textContent = text;
   }
   const fullLink = document.querySelector("[data-scoreboard-full-link]");
   if (fullLink) {

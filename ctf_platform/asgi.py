@@ -97,14 +97,15 @@ def load_user_from_cookie(cookies: dict[str, str]):
         return conn.execute("SELECT * FROM users WHERE id = ? AND is_active = 1", (session["user_id"],)).fetchone()
 
 
-def build_competition_state(comp_id: int) -> dict:
+def build_competition_state(comp_id: int, manager: bool = False) -> dict:
     now = utcnow()
     with connect() as conn:
         competition = conn.execute("SELECT * FROM competitions WHERE id = ?", (comp_id,)).fetchone()
         active = web.active_challenge(conn, comp_id)
         scoreboard_limit = web.scoreboard_preview_limit_for(competition)
         full_board = web.scoreboard(conn, comp_id, None)
-        board = full_board[:scoreboard_limit]
+        hidden_board = web.hidden_scoreboard_rows(conn, comp_id) if manager else []
+        board = (hidden_board if manager else []) + web.visible_scoreboard_rows(full_board[:scoreboard_limit])
     active_payload = None
     if active:
         closes = parse_iso(active["closes_at"])
@@ -123,22 +124,15 @@ def build_competition_state(comp_id: int) -> dict:
         "active": active_payload,
         "scoreboard_limit": scoreboard_limit,
         "scoreboard_total": len(full_board),
-        "scoreboard": [
-            {
-                "user_id": row["user_id"],
-                "username": row["username"],
-                "score": row["score"],
-                "solved_count": row["solved_count"],
-                "last_solve": row["last_solve"],
-            }
-            for row in board
-        ],
+        "hidden_scoreboard_total": len(hidden_board),
+        "scoreboard": web.scoreboard_payload_rows(board),
     }
 
 
 class LiveClient:
-    def __init__(self, websocket: WebSocket):
+    def __init__(self, websocket: WebSocket, manager: bool = False):
         self.websocket = websocket
+        self.manager = manager
         self.lock = asyncio.Lock()
 
     async def send_json(self, payload: dict) -> None:
@@ -153,12 +147,12 @@ class LiveHub:
         self.lock = asyncio.Lock()
         self._running = True
 
-    async def connect(self, comp_id: int, websocket: WebSocket) -> LiveClient:
+    async def connect(self, comp_id: int, websocket: WebSocket, manager: bool = False) -> LiveClient:
         await websocket.accept()
-        client = LiveClient(websocket)
+        client = LiveClient(websocket, manager)
         async with self.lock:
             self.connections.setdefault(comp_id, set()).add(client)
-        payload = build_competition_state(comp_id)
+        payload = build_competition_state(comp_id, manager=manager)
         payload["type"] = "hello"
         payload["competition_id"] = comp_id
         await client.send_json(payload)
@@ -180,15 +174,20 @@ class LiveHub:
     async def run(self) -> None:
         while self._running:
             for comp_id, clients in (await self.snapshot()).items():
-                payload = build_competition_state(comp_id)
-                active_id = payload["active"]["id"] if payload["active"] else None
+                public_payload = build_competition_state(comp_id, manager=False)
+                manager_payload = None
+                active_id = public_payload["active"]["id"] if public_payload["active"] else None
                 previous_id = self.last_active.get(comp_id)
-                payload["type"] = "round_changed" if active_id != previous_id else "tick"
-                payload["competition_id"] = comp_id
+                payload_type = "round_changed" if active_id != previous_id else "tick"
                 self.last_active[comp_id] = active_id
                 stale: list[LiveClient] = []
                 for client in clients:
                     try:
+                        if client.manager and manager_payload is None:
+                            manager_payload = build_competition_state(comp_id, manager=True)
+                        payload = dict(manager_payload if client.manager else public_payload)
+                        payload["type"] = payload_type
+                        payload["competition_id"] = comp_id
                         await client.send_json(payload)
                     except Exception:
                         stale.append(client)
@@ -227,7 +226,7 @@ async def competition_ws(websocket: WebSocket, comp_id: int) -> None:
         await websocket.close(code=1008)
         return
 
-    client = await hub.connect(comp_id, websocket)
+    client = await hub.connect(comp_id, websocket, manager=web.can_manage_competition(user, competition))
     try:
         while True:
             raw = await websocket.receive_text()

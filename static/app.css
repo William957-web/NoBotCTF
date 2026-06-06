@@ -516,6 +516,10 @@ p > input[data-list-search] {
   overflow-x: auto;
 }
 
+.scoreboard-hidden-row {
+  background: rgba(224, 108, 117, .08);
+}
+
 .wide-cell {
   min-width: 18rem;
   max-width: 34rem;

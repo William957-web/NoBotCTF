@@ -899,6 +899,75 @@ def scoreboard(conn, competition_id: int, limit: int | None = 20):
     return ranked if limit is None else ranked[:limit]
 
 
+def visible_scoreboard_rows(rows: list, start: int = 1) -> list[dict]:
+    return [{**row, "rank": index, "is_hidden": False} for index, row in enumerate(rows, start=start)]
+
+
+def hidden_score_totals(conn, competition_id: int, user_ids: list[int]) -> dict[int, dict]:
+    if not user_ids:
+        return {}
+    competition = conn.execute("SELECT scoring_mode FROM competitions WHERE id = ?", (competition_id,)).fetchone()
+    cutoff = competition_freeze_cutoff(conn, competition_id)
+    cutoff_clause = "AND s.created_at <= ?" if cutoff else ""
+    sub_cutoff_clause = "AND s2.created_at <= ?" if cutoff else ""
+    placeholders = ",".join("?" for _ in user_ids)
+    params: list = [competition_id]
+    if cutoff:
+        params.append(cutoff)
+    params.append(competition_id)
+    if cutoff:
+        params.append(cutoff)
+    params.extend(user_ids)
+    rows = conn.execute(
+        f"""
+        SELECT first_solves.user_id, users.username, first_solves.challenge_id, first_solves.created_at,
+               challenges.points,
+               (SELECT COUNT(*) FROM solves s2
+                JOIN users u2 ON u2.id = s2.user_id
+                JOIN competitions c2 ON c2.id = s2.competition_id
+                WHERE s2.competition_id = ?
+                  AND s2.challenge_id = first_solves.challenge_id {sub_cutoff_clause}
+                  AND u2.role = 'player'
+                  AND u2.is_active = 1
+                  AND u2.id != c2.owner_id
+                  AND NOT EXISTS (
+                      SELECT 1 FROM competition_collaborators cc2
+                      WHERE cc2.competition_id = s2.competition_id AND cc2.user_id = s2.user_id
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM competition_hidden_users hu2
+                      WHERE hu2.competition_id = s2.competition_id AND hu2.user_id = s2.user_id
+                  )) AS challenge_solve_count
+        FROM (
+            SELECT s.user_id, s.challenge_id, MIN(s.created_at) AS created_at
+            FROM submissions s
+            WHERE s.competition_id = ?
+              AND s.result = 'correct' {cutoff_clause}
+              AND s.user_id IN ({placeholders})
+            GROUP BY s.user_id, s.challenge_id
+        ) first_solves
+        JOIN users ON users.id = first_solves.user_id
+        JOIN challenges ON challenges.id = first_solves.challenge_id
+        ORDER BY first_solves.created_at ASC
+        """,
+        tuple(params),
+    ).fetchall()
+    by_user: dict[int, dict] = {}
+    dynamic = bool(competition and competition["scoring_mode"] == "dynamic")
+    for row in rows:
+        user_score = by_user.setdefault(
+            row["user_id"],
+            {"user_id": row["user_id"], "username": row["username"], "solved_count": 0, "score": 0, "last_solve": None},
+        )
+        solve_count = max(1, int(row["challenge_solve_count"] or 1))
+        points = int(row["points"])
+        awarded = max(10, min(points, round(points * (0.92 ** (solve_count - 1))))) if dynamic else points
+        user_score["solved_count"] += 1
+        user_score["score"] += awarded
+        user_score["last_solve"] = row["created_at"]
+    return by_user
+
+
 def rejudge_competition_solves(conn, competition_id: int) -> int:
     conn.execute("DELETE FROM solves WHERE competition_id = ?", (competition_id,))
     rows = conn.execute(
@@ -1162,6 +1231,53 @@ def competition_hidden_user_rows(conn, competition_id: int) -> list:
         """,
         (competition_id,),
     ).fetchall()
+
+
+def hidden_scoreboard_rows(conn, competition_id: int) -> list[dict]:
+    hidden_users = competition_hidden_user_rows(conn, competition_id)
+    score_by_user = hidden_score_totals(conn, competition_id, [int(user["user_id"]) for user in hidden_users])
+    rows: list[dict] = []
+    for user in hidden_users:
+        user_id = int(user["user_id"])
+        score = score_by_user.get(
+            user_id,
+            {"user_id": user_id, "username": user["username"], "solved_count": 0, "score": 0, "last_solve": None},
+        )
+        rows.append(
+            {
+                "user_id": user_id,
+                "username": user["username"],
+                "score": score["score"],
+                "solved_count": score["solved_count"],
+                "last_solve": score["last_solve"],
+                "rank": None,
+                "is_hidden": True,
+                "hidden_reason": user["reason"],
+                "hidden_by_name": user["hidden_by_name"],
+                "hidden_at": user["created_at"],
+            }
+        )
+    return rows
+
+
+def scoreboard_payload_rows(rows: list[dict]) -> list[dict]:
+    payload = []
+    for row in rows:
+        item = {
+            "user_id": row["user_id"],
+            "username": row["username"],
+            "rank": row.get("rank"),
+            "score": row["score"],
+            "solved_count": row["solved_count"],
+            "last_solve": row["last_solve"],
+            "is_hidden": bool(row.get("is_hidden")),
+        }
+        if item["is_hidden"]:
+            item["hidden_reason"] = row.get("hidden_reason") or ""
+            item["hidden_by_name"] = row.get("hidden_by_name") or ""
+            item["hidden_at"] = row.get("hidden_at")
+        payload.append(item)
+    return payload
 
 
 def paginate_rows(rows: list, page: int, page_size: int = COMPETITION_PAGE_SIZE) -> dict:
@@ -2092,7 +2208,8 @@ def competition_detail(request: Request, comp_id: str) -> Response:
         freeze_cutoff = competition_freeze_cutoff(conn, int(comp_id))
         scoreboard_limit = scoreboard_preview_limit_for(competition)
         full_board = scoreboard(conn, int(comp_id), None)
-        board = full_board[:scoreboard_limit]
+        hidden_scoreboard = hidden_scoreboard_rows(conn, int(comp_id)) if manager else []
+        board = (hidden_scoreboard if manager else []) + visible_scoreboard_rows(full_board[:scoreboard_limit])
         registered = False
         can_compete = False
         compete_block_reason = ""
@@ -2108,7 +2225,6 @@ def competition_detail(request: Request, comp_id: str) -> Response:
         my_submissions = []
         invites = []
         collaborators = []
-        hidden_users = []
         announcements = conn.execute(
             """
             SELECT a.*, u.username AS author_name
@@ -2144,7 +2260,6 @@ def competition_detail(request: Request, comp_id: str) -> Response:
                 """,
                 (comp_id,),
             ).fetchall()
-            hidden_users = competition_hidden_user_rows(conn, int(comp_id))
             audit_events = conn.execute(
                 """
                 SELECT a.*, u.username AS actor_name
@@ -2181,6 +2296,8 @@ def competition_detail(request: Request, comp_id: str) -> Response:
         visible_challenges=challenges if can_see_all_challenges else [],
         scoreboard=board,
         scoreboard_total=len(full_board),
+        hidden_scoreboard_total=len(hidden_scoreboard),
+        scoreboard_visible_count=min(scoreboard_limit, len(full_board)),
         scoreboard_preview_limit=scoreboard_limit,
         registered=registered,
         can_compete=can_compete,
@@ -2197,7 +2314,6 @@ def competition_detail(request: Request, comp_id: str) -> Response:
         my_submissions=my_submissions,
         announcements=announcements,
         collaborators=collaborators,
-        hidden_users=hidden_users,
         invites=invites,
         audit_events=audit_events,
         ends_at=ends_at,
@@ -2216,26 +2332,26 @@ def competition_scoreboard(request: Request, comp_id: str) -> Response:
     manager = can_manage_competition(request.current_user, competition)
     q = clip(request.query.get("q", ""), 80)
     page = nonnegative_int(request.query.get("page", "1"), 1, 1)
-    hidden_users = []
     with connect() as conn:
         server_now = iso_utc()
         ends_at = competition_end_at(conn, int(comp_id), competition["starts_at"])
         freeze_cutoff = competition_freeze_cutoff(conn, int(comp_id))
-        board = filter_scoreboard_rows(scoreboard(conn, int(comp_id), None), q)
-        if manager:
-            hidden_users = competition_hidden_user_rows(conn, int(comp_id))
+        visible_board = filter_scoreboard_rows(scoreboard(conn, int(comp_id), None), q)
+        hidden_board = filter_scoreboard_rows(hidden_scoreboard_rows(conn, int(comp_id)), q) if manager else []
+        board = (hidden_board if manager else []) + visible_scoreboard_rows(visible_board)
     return render(
         request,
         "scoreboard.html",
         competition=competition,
         paginated=paginate_rows(board, page, SCOREBOARD_PAGE_SIZE),
         scoreboard_page_size=SCOREBOARD_PAGE_SIZE,
+        visible_scoreboard_total=len(visible_board),
+        hidden_scoreboard_total=len(hidden_board),
         freeze_cutoff=freeze_cutoff,
         server_now=server_now,
         ends_at=ends_at,
         q=q,
         manager=manager,
-        hidden_users=hidden_users,
     )
 
 
@@ -2938,7 +3054,9 @@ def competition_state(request: Request, comp_id: str) -> Response:
         active = active_challenge(conn, int(comp_id))
         scoreboard_limit = scoreboard_preview_limit_for(competition)
         full_board = scoreboard(conn, int(comp_id), None)
-        board = full_board[:scoreboard_limit]
+        manager = can_manage_competition(request.current_user, competition)
+        hidden_board = hidden_scoreboard_rows(conn, int(comp_id)) if manager else []
+        board = (hidden_board if manager else []) + visible_scoreboard_rows(full_board[:scoreboard_limit])
     active_payload = None
     if active:
         closes = parse_iso(active["closes_at"])
@@ -2958,16 +3076,8 @@ def competition_state(request: Request, comp_id: str) -> Response:
             "active": active_payload,
             "scoreboard_limit": scoreboard_limit,
             "scoreboard_total": len(full_board),
-            "scoreboard": [
-                {
-                    "user_id": row["user_id"],
-                    "username": row["username"],
-                    "score": row["score"],
-                    "solved_count": row["solved_count"],
-                    "last_solve": row["last_solve"],
-                }
-                for row in board
-            ],
+            "hidden_scoreboard_total": len(hidden_board),
+            "scoreboard": scoreboard_payload_rows(board),
         }
     )
 
