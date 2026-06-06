@@ -99,7 +99,7 @@ No Bot!
   - Organizer applications
   - Competition review / archive decisions
   - User roles
-  - User active/inactive status
+  - User hide/reveal status
   - Admin password reset for users
 - Admin can promote/demote users while protecting the last active admin.
 - Admin can review pending competitions and organizer requests.

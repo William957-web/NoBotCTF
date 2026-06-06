@@ -1707,7 +1707,7 @@ def admin_user_toggle(request: Request, user_id: str) -> Response:
         for comp_id in affected_competitions:
             rejudge_competition_solves(conn, comp_id)
         audit(conn, request.current_user["id"], "toggle_user_active", "user", int(user_id), {"is_active": next_active})
-    return redirect(with_notice("/admin", "User status updated."))
+    return redirect(with_notice("/admin", "User revealed." if next_active else "User hidden."))
 
 
 @route("POST", r"/admin/users/(?P<user_id>\d+)/password")

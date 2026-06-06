@@ -97,7 +97,7 @@
         <tr data-search-item>
           <td><a href="/users/{{ user.username }}">{{ user.username }}</a><div class="muted">{{ user.email }}</div></td>
           <td><span class="badge {{ user.role }}">{{ user.role }}</span></td>
-          <td>{% if user.is_active %}<span class="badge ok">active</span>{% else %}<span class="badge danger">disabled</span>{% endif %}</td>
+          <td>{% if user.is_active %}<span class="badge ok">visible</span>{% else %}<span class="badge danger">hidden</span>{% endif %}</td>
           <td>{{ user.joined_count }}</td>
           <td>{{ user.solve_count }}</td>
           <td>
@@ -112,8 +112,8 @@
             </form>
             <form method="post" action="/admin/users/{{ user.id }}/toggle" class="inline-form">
               {{ csrf_input() }}
-              <button class="button small {% if user.is_active %}danger{% endif %}" type="submit">
-                {% if user.is_active %}<i class="fa-solid fa-user-slash"></i>{% else %}<i class="fa-solid fa-user-check"></i>{% endif %}
+              <button class="button small {% if user.is_active %}danger{% else %}primary{% endif %}" type="submit" title="{% if user.is_active %}Hide user{% else %}Reveal user{% endif %}">
+                {% if user.is_active %}<i class="fa-solid fa-user-slash"></i> Hide{% else %}<i class="fa-solid fa-user-check"></i> Reveal{% endif %}
               </button>
             </form>
           </td>
