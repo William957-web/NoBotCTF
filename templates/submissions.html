@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Submissions · {{ competition.title }} · {{ platform_name }}{% endblock %}
+{% block content %}
+<section class="page-section split">
+  <div>
+    <p class="terminal-line">$ submissions.open /{{ competition.slug }}</p>
+    <h2>{{ competition.title }} submissions</h2>
+    <p class="muted">Page {{ paginated.page }} of {{ paginated.total_pages }} · {{ paginated.total }} submissions{% if q %} matching "{{ q }}"{% endif %}.</p>
+  </div>
+  <div class="action-row align-end">
+    <form method="get" action="/competitions/{{ competition.id }}/submissions" class="inline-form search-form">
+      <input name="q" value="{{ q }}" maxlength="80" placeholder="Search submissions">
+      <button class="button primary" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+      {% if q %}<a class="button" href="/competitions/{{ competition.id }}/submissions"><i class="fa-solid fa-xmark"></i> Clear</a>{% endif %}
+    </form>
+    <a class="button" href="/competitions/{{ competition.id }}"><i class="fa-solid fa-arrow-left"></i> Back to competition</a>
+  </div>
+</section>
+
+<section class="page-section">
+  {% set next_path = '/competitions/' ~ competition.id ~ '/submissions?page=' ~ paginated.page %}
+  {% if q %}{% set next_path = next_path ~ '&q=' ~ (q|urlencode) %}{% endif %}
+  <form method="post" action="/competitions/{{ competition.id }}/submissions/bulk">
+    {{ csrf_input() }}
+    <input type="hidden" name="next" value="{{ next_path }}">
+    <div class="split">
+      <div>
+        <h2>all submissions</h2>
+        <p class="muted">Manual pass marks selected rows correct, then rebuilds scored solves.</p>
+      </div>
+      <div class="action-row align-end submission-actions">
+        <button class="button small primary" name="action" value="pass" type="submit"><i class="fa-solid fa-check"></i> Pass selected</button>
+        <button class="button small danger" name="action" value="delete" type="submit"><i class="fa-solid fa-trash"></i> Delete selected</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th>Time</th><th>Player</th><th>Challenge</th><th>Result</th><th>Scored</th><th>Flag</th></tr></thead>
+        <tbody>
+        {% for sub in paginated["items"] %}
+          <tr>
+            <td><input type="checkbox" name="submission_{{ sub.id }}"></td>
+            <td>{{ sub.created_at|local_time }}</td>
+            <td>
+              <a href="/users/{{ sub.username }}">{{ sub.username }}</a>
+              <div class="muted">{{ sub.email }}</div>
+              {% if sub.is_hidden %}<div><span class="badge closed">hidden</span></div>{% endif %}
+            </td>
+            <td>{{ sub.challenge_title }}</td>
+            <td><span class="badge {{ sub.result }}">{{ sub.result }}</span></td>
+            <td>{% if sub.is_scored %}<span class="badge ok">yes</span>{% else %}<span class="badge">no</span>{% endif %}</td>
+            <td class="wide-cell"><code>{{ sub.flag_display }}</code></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7" class="muted">No submissions found.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+  <div class="pagination-row">
+    {% if paginated.has_prev %}
+    <a class="button" href="/competitions/{{ competition.id }}/submissions?page={{ paginated.prev_page }}{% if q %}&q={{ q|urlencode }}{% endif %}"><i class="fa-solid fa-chevron-left"></i> Previous</a>
+    {% endif %}
+    {% if paginated.has_next %}
+    <a class="button primary" href="/competitions/{{ competition.id }}/submissions?page={{ paginated.next_page }}{% if q %}&q={{ q|urlencode }}{% endif %}">Next <i class="fa-solid fa-chevron-right"></i></a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

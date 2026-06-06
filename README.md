@@ -74,6 +74,14 @@ No Bot!
 - Full scoreboard page is available at `/competitions/<id>/scoreboard`.
 - Full scoreboard uses pagination.
 - Live API/WebSocket updates respect the scoreboard preview limit and report total ranked players.
+- Organizers can hide players from the scoreboard from the preview or full scoreboard.
+- Hidden players are excluded from public rankings and scored solves.
+
+### Organizer Moderation
+
+- Competition managers can review recent submissions on the competition detail page.
+- Full submission history is available at `/competitions/<id>/submissions`.
+- Submission lists support search, pagination, checkbox selection, bulk manual pass, and bulk delete.
 
 ### Collaboration
 
@@ -102,8 +110,8 @@ No Bot!
 - SameSite=Lax session cookies.
 - scrypt password hashing.
 - CSRF protection on POST forms.
-- Flag attempts are digested before storing submission history.
-- Static flags are hashed server-side.
+- Submitted flag values are retained for organizer review and manual judging.
+- Static flags are stored as plain `flag_value`; no flag hash is required.
 - Regex flags are validated and full-matched.
 - Uploaded dist files are stored outside route paths and served through permission checks.
 - SQLite writes use `BEGIN IMMEDIATE`.
@@ -131,7 +139,7 @@ python3 -m venv .venv
 The script performs:
 
 - Python syntax check.
-- Flag regex behavior check.
+- Flag behavior check.
 - `docker compose down`.
 - Database and upload cleanup.
 - `docker compose up --build -d`.
@@ -288,6 +296,7 @@ Verifies static flag matching and regex full-match behavior:
 | `/competitions/new` | Create competition |
 | `/competitions/<id>` | Competition detail and live round |
 | `/competitions/<id>/scoreboard` | Full scoreboard |
+| `/competitions/<id>/submissions` | Organizer full submission list |
 | `/competitions/<id>/challenges/new` | Create challenge |
 | `/challenges/<id>/preview` | Organizer/collaborator challenge preview |
 | `/challenges/<id>/dist` | Challenge dist download |
@@ -317,6 +326,6 @@ Flag submission runs in a single SQLite transaction:
 3. Check `opens_at <= now < closes_at` with server time.
 4. Validate the flag.
 5. Insert into `solves`.
-6. Record the submission result.
+6. Record the submission value and result.
 
 The `UNIQUE(user_id, challenge_id)` constraint prevents duplicated solves from scoring twice, even under concurrent correct submissions.

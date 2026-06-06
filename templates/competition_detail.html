@@ -175,7 +175,7 @@
     </div>
     <div class="action-row align-end">
       <input data-list-search="#competition-scoreboard-preview" maxlength="80" placeholder="Search scoreboard">
-      <a class="button" data-scoreboard-full-link href="/competitions/{{ competition.id }}/scoreboard" {% if scoreboard_total <= scoreboard|length %}hidden{% endif %}><i class="fa-solid fa-ranking-star"></i> Full scoreboard</a>
+      <a class="button" data-scoreboard-full-link href="/competitions/{{ competition.id }}/scoreboard"><i class="fa-solid fa-ranking-star"></i> Full scoreboard</a>
       <div class="health-panel">
         <span><i class="fa-solid fa-clock"></i> server {{ server_now|local_time }}</span>
         <span><i class="fa-solid fa-wifi"></i> live sync</span>
@@ -184,8 +184,8 @@
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>#</th><th>Player</th><th>Score</th><th>Solves</th><th>Last solve</th></tr></thead>
-      <tbody id="competition-scoreboard-preview" data-scoreboard-body>
+      <thead><tr><th>#</th><th>Player</th><th>Score</th><th>Solves</th><th>Last solve</th>{% if manager %}<th>Manage</th>{% endif %}</tr></thead>
+      <tbody id="competition-scoreboard-preview" data-scoreboard-body {% if manager %}data-scoreboard-manage="1" data-hide-url-template="/competitions/{{ competition.id }}/hidden-users/__USER_ID__/hide" data-next-url="/competitions/{{ competition.id }}" data-csrf="{{ request.csrf_token }}"{% endif %}>
       {% for row in scoreboard %}
         <tr data-search-item>
           <td>{{ loop.index }}</td>
@@ -193,9 +193,19 @@
           <td>{{ row.score }}</td>
           <td>{{ row.solved_count }}</td>
           <td>{{ row.last_solve|local_time }}</td>
+          {% if manager %}
+          <td>
+            <form method="post" action="/competitions/{{ competition.id }}/hidden-users/{{ row.user_id }}/hide" class="inline-form">
+              {{ csrf_input() }}
+              <input type="hidden" name="reason" value="Hidden from scoreboard">
+              <input type="hidden" name="next" value="/competitions/{{ competition.id }}">
+              <button class="button small danger" type="submit"><i class="fa-solid fa-ban"></i> Hide</button>
+            </form>
+          </td>
+          {% endif %}
         </tr>
       {% else %}
-        <tr><td colspan="5" class="muted">No solves yet.</td></tr>
+        <tr><td colspan="{% if manager %}6{% else %}5{% endif %}" class="muted">No solves yet.</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -389,12 +399,6 @@
     </div>
     <div class="action-row align-end">
       <input data-list-search="#competition-hidden-users" maxlength="80" placeholder="Search hidden users">
-      <form method="post" action="/competitions/{{ competition.id }}/hidden-users" class="inline-form control-form">
-        {{ csrf_input() }}
-        <input name="username" maxlength="160" required placeholder="username / email / id">
-        <input name="reason" maxlength="500" placeholder="reason">
-        <button class="button small danger" type="submit"><i class="fa-solid fa-ban"></i> Hide</button>
-      </form>
     </div>
   </div>
   <div class="table-wrap">
@@ -411,6 +415,7 @@
           <td>
             <form method="post" action="/competitions/{{ competition.id }}/hidden-users/{{ user.user_id }}/unhide" class="inline-form">
               {{ csrf_input() }}
+              <input type="hidden" name="next" value="/competitions/{{ competition.id }}">
               <button class="button small" type="submit"><i class="fa-solid fa-user-check"></i> Unhide</button>
             </form>
           </td>
@@ -436,14 +441,14 @@
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Time</th><th>Challenge</th><th>Result</th><th>Digest</th></tr></thead>
+      <thead><tr><th>Time</th><th>Challenge</th><th>Result</th><th>Flag</th></tr></thead>
       <tbody id="competition-my-submissions" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for sub in my_submissions %}
         <tr data-search-item>
           <td>{{ sub.created_at|local_time }}</td>
           <td>{{ sub.challenge_title }}</td>
           <td><span class="badge {{ sub.result }}">{{ sub.result }}</span></td>
-          <td><code>{{ sub.flag_digest[:12] }}</code></td>
+          <td><code>{{ sub.flag_display }}</code></td>
         </tr>
       {% else %}
         <tr><td colspan="4" class="muted">No submissions yet.</td></tr>
@@ -459,17 +464,27 @@
   <div class="split">
     <div>
       <h2>recent submissions</h2>
+      <p class="muted">Showing latest {{ recent_submissions|length }} submissions.</p>
     </div>
     <div class="action-row align-end">
       <input data-list-search="#competition-recent-submissions" maxlength="80" placeholder="Search submissions">
+      <a class="button" href="/competitions/{{ competition.id }}/submissions"><i class="fa-solid fa-list"></i> Full submissions</a>
     </div>
   </div>
+  <form method="post" action="/competitions/{{ competition.id }}/submissions/bulk">
+    {{ csrf_input() }}
+    <input type="hidden" name="next" value="/competitions/{{ competition.id }}">
+    <div class="action-row submission-actions">
+      <button class="button small primary" name="action" value="pass" type="submit"><i class="fa-solid fa-check"></i> Pass selected</button>
+      <button class="button small danger" name="action" value="delete" type="submit"><i class="fa-solid fa-trash"></i> Delete selected</button>
+    </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Time</th><th>Player</th><th>Challenge</th><th>Result</th><th>Digest</th><th></th></tr></thead>
+      <thead><tr><th></th><th>Time</th><th>Player</th><th>Challenge</th><th>Result</th><th>Scored</th><th>Flag</th></tr></thead>
       <tbody id="competition-recent-submissions" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for sub in recent_submissions %}
         <tr data-search-item>
+          <td><input type="checkbox" name="submission_{{ sub.id }}"></td>
           <td>{{ sub.created_at|local_time }}</td>
           <td>
             <a href="/users/{{ sub.username }}">{{ sub.username }}</a>
@@ -477,28 +492,16 @@
           </td>
           <td>{{ sub.challenge_title }}</td>
           <td><span class="badge {{ sub.result }}">{{ sub.result }}</span></td>
-          <td><code>{{ sub.flag_digest[:12] }}</code></td>
-          <td>
-            {% if sub.is_hidden %}
-            <form method="post" action="/competitions/{{ competition.id }}/hidden-users/{{ sub.user_id }}/unhide" class="inline-form">
-              {{ csrf_input() }}
-              <button class="button small" type="submit"><i class="fa-solid fa-user-check"></i> Unhide</button>
-            </form>
-            {% elif sub.user_role == 'player' %}
-            <form method="post" action="/competitions/{{ competition.id }}/hidden-users/{{ sub.user_id }}/hide" class="inline-form control-form">
-              {{ csrf_input() }}
-              <input name="reason" maxlength="500" placeholder="reason">
-              <button class="button small danger" type="submit"><i class="fa-solid fa-ban"></i> Hide</button>
-            </form>
-            {% endif %}
-          </td>
+          <td>{% if sub.is_scored %}<span class="badge ok">yes</span>{% else %}<span class="badge">no</span>{% endif %}</td>
+          <td><code>{{ sub.flag_display }}</code></td>
         </tr>
       {% else %}
-        <tr><td colspan="6" class="muted">No submissions yet.</td></tr>
+        <tr><td colspan="7" class="muted">No submissions yet.</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
+  </form>
 </section>
 
 <section class="page-section">

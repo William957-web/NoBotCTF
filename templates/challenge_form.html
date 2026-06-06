@@ -39,8 +39,8 @@
         <option value="regex" {% if current_flag_type == 'regex' %}selected{% endif %}>regex</option>
       </select>
     </label>
-    <label data-flag-group="static">Static flag {% if challenge %}<span class="muted">leave blank to keep the current static flag</span>{% endif %}
-      <input name="flag" autocomplete="off" placeholder="FLAG{example}">
+    <label data-flag-group="static">Static flag {% if challenge and challenge.flag_value %}<span class="muted">leave blank to keep the current static flag</span>{% endif %}
+      <input name="flag" autocomplete="off" placeholder="FLAG{example}" value="{{ form.flag if form else (challenge.flag_value if challenge and challenge.flag_value else '') }}">
     </label>
     <label data-flag-group="regex">Regex pattern {% if challenge and challenge.flag_type == 'regex' %}<span class="muted">leave blank to keep the current regex</span>{% endif %}
       <input name="flag_pattern" autocomplete="off" value="{{ form.flag_pattern if form else (challenge.flag_pattern if challenge and challenge.flag_type == 'regex' else '') }}" placeholder="FLAG\\{user-[0-9]+\\}">

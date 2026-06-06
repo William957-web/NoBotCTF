@@ -123,11 +123,19 @@ function localTime(value) {
 function renderScoreboard(payload) {
   const board = document.querySelector("[data-scoreboard-body]");
   if (!board || !Array.isArray(payload.scoreboard)) return;
+  const managed = board.dataset.scoreboardManage === "1";
+  const colspan = managed ? 6 : 5;
+  const hideCell = (row) => {
+    if (!managed || !board.dataset.hideUrlTemplate || !board.dataset.csrf) return "";
+    const action = board.dataset.hideUrlTemplate.replace("__USER_ID__", encodeURIComponent(String(row.user_id)));
+    const nextInput = board.dataset.nextUrl ? `<input type="hidden" name="next" value="${escapeHtml(board.dataset.nextUrl)}">` : "";
+    return `<td><form method="post" action="${escapeHtml(action)}" class="inline-form"><input type="hidden" name="_csrf" value="${escapeHtml(board.dataset.csrf)}"><input type="hidden" name="reason" value="Hidden from scoreboard">${nextInput}<button class="button small danger" type="submit"><i class="fa-solid fa-ban"></i> Hide</button></form></td>`;
+  };
   if (payload.scoreboard.length === 0) {
-    board.innerHTML = '<tr><td colspan="5" class="muted">No solves yet.</td></tr>';
+    board.innerHTML = `<tr><td colspan="${colspan}" class="muted">No solves yet.</td></tr>`;
   } else {
     board.innerHTML = payload.scoreboard.map((row, index) => (
-      `<tr data-search-item><td>${index + 1}</td><td>${userProfileLink(row.username)}</td><td>${row.score}</td><td>${row.solved_count}</td><td>${localTime(row.last_solve)}</td></tr>`
+      `<tr data-search-item><td>${index + 1}</td><td>${userProfileLink(row.username)}</td><td>${row.score}</td><td>${row.solved_count}</td><td>${localTime(row.last_solve)}</td>${hideCell(row)}</tr>`
     )).join("");
   }
   const total = Number(payload.scoreboard_total ?? payload.scoreboard.length);
@@ -139,7 +147,7 @@ function renderScoreboard(payload) {
   }
   const fullLink = document.querySelector("[data-scoreboard-full-link]");
   if (fullLink) {
-    fullLink.hidden = total <= shown;
+    fullLink.hidden = false;
   }
   refreshListSearchesFor(board);
 }

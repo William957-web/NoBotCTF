@@ -59,6 +59,7 @@
 .fa-user-plus::before { content: "+"; }
 .fa-magnifying-glass::before { content: "?"; }
 .fa-rotate::before { content: "r"; }
+.fa-list::before { content: "="; }
 
 *,
 *::before,
@@ -505,6 +506,10 @@ p > input[data-list-search] {
   display: grid;
   gap: .45rem;
   min-width: 14rem;
+}
+
+.submission-actions {
+  margin: 0 0 .6rem;
 }
 
 .table-wrap {

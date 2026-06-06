@@ -108,7 +108,8 @@ CREATE TABLE IF NOT EXISTS challenges (
     points INTEGER NOT NULL CHECK(points > 0),
     flag_type TEXT NOT NULL DEFAULT 'static'
         CHECK(flag_type IN ('static', 'regex')),
-    flag_hash TEXT NOT NULL,
+    flag_value TEXT NOT NULL DEFAULT '',
+    flag_hash TEXT NOT NULL DEFAULT '',
     flag_pattern TEXT,
     position INTEGER NOT NULL DEFAULT 0,
     duration_minutes INTEGER NOT NULL DEFAULT 15 CHECK(duration_minutes > 0),
@@ -186,6 +187,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     competition_id INTEGER NOT NULL REFERENCES competitions(id) ON DELETE CASCADE,
     challenge_id INTEGER NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    flag_value TEXT NOT NULL DEFAULT '',
     flag_digest TEXT NOT NULL,
     result TEXT NOT NULL CHECK(result IN ('correct', 'wrong', 'closed', 'duplicate')),
     created_at TEXT NOT NULL
@@ -285,6 +287,8 @@ def migrate(conn: sqlite3.Connection) -> None:
     challenge_columns = {row["name"] for row in conn.execute("PRAGMA table_info(challenges)").fetchall()}
     if "flag_type" not in challenge_columns:
         conn.execute("ALTER TABLE challenges ADD COLUMN flag_type TEXT NOT NULL DEFAULT 'static'")
+    if "flag_value" not in challenge_columns:
+        conn.execute("ALTER TABLE challenges ADD COLUMN flag_value TEXT NOT NULL DEFAULT ''")
     if "flag_pattern" not in challenge_columns:
         conn.execute("ALTER TABLE challenges ADD COLUMN flag_pattern TEXT")
     if "tags" not in challenge_columns:
@@ -305,6 +309,9 @@ def migrate(conn: sqlite3.Connection) -> None:
     if "hint_unlock_minutes" not in challenge_columns:
         conn.execute("ALTER TABLE challenges ADD COLUMN hint_unlock_minutes INTEGER NOT NULL DEFAULT 0")
     conn.execute("UPDATE challenges SET duration_minutes = 15 WHERE duration_minutes IS NULL OR duration_minutes <= 0")
+    submission_columns = {row["name"] for row in conn.execute("PRAGMA table_info(submissions)").fetchall()}
+    if "flag_value" not in submission_columns:
+        conn.execute("ALTER TABLE submissions ADD COLUMN flag_value TEXT NOT NULL DEFAULT ''")
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS competition_collaborator_invites (

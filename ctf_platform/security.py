@@ -67,19 +67,3 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, encoded: str) -> bool:
     return verify_secret(password, encoded)
-
-
-def hash_flag(flag: str) -> str:
-    return hash_secret(flag.strip())
-
-
-def verify_flag(flag: str, encoded: str) -> bool:
-    return verify_secret(flag.strip(), encoded)
-
-
-def flag_attempt_digest(flag: str) -> str:
-    return hashlib.sha256(flag.strip().encode("utf-8")).hexdigest()
-
-
-def hash_flag_pattern(pattern: str) -> str:
-    return hash_secret(pattern.strip())

@@ -13,7 +13,7 @@ else
   exit 1
 fi
 
-echo "[1/6] Checking Python syntax and flag regex behavior"
+echo "[1/6] Checking Python syntax and flag behavior"
 .venv/bin/python -m compileall ctf_platform app.py >/dev/null
 .venv/bin/python scripts/check_flag_regex.py
 

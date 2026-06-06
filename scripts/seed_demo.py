@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from ctf_platform import web
 from ctf_platform.config import UPLOAD_DIR
 from ctf_platform.db import connect, init_db, transaction
-from ctf_platform.security import hash_flag, hash_password
+from ctf_platform.security import hash_password
 from ctf_platform.utils import iso_utc, parse_iso, slugify, utcnow
 
 
@@ -120,7 +120,7 @@ The real flag is stored server-side. This archive is intentionally safe demo con
             f"""challenge={title}
 category={category}
 demo=true
-server_side_flag_hash_only=true
+server_side_flag_plaintext=true
 sample_token={flag.replace('FLAG{', '').replace('}', '')[:8]}
 """,
         )
@@ -216,11 +216,11 @@ def create_competition(conn, user_ids, key, title, slug, summary, owner, starts_
         challenge_id = conn.execute(
             """
             INSERT INTO challenges(
-                competition_id, title, slug, category, tags, body, points, flag_type, flag_hash, flag_pattern,
+                competition_id, title, slug, category, tags, body, points, flag_type, flag_value, flag_hash, flag_pattern,
                 position, duration_minutes, hint_text, hint_cost, hint_unlock_minutes,
                 opens_at, closes_at, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'static', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'static', ?, '', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 comp_id,
@@ -230,7 +230,7 @@ def create_competition(conn, user_ids, key, title, slug, summary, owner, starts_
                 web.normalize_tags(tags),
                 markdown_body(ch_title, category, tags, body, points, duration),
                 points,
-                hash_flag(flag),
+                flag,
                 position,
                 duration,
                 hint,
@@ -285,8 +285,14 @@ def seed() -> None:
         def add_solve(comp_id, challenge_position, username, minutes_ago):
             challenge = conn.execute("SELECT * FROM challenges WHERE competition_id = ? AND position = ?", (comp_id, challenge_position)).fetchone()
             solved_at = iso_utc(now_dt - timedelta(minutes=minutes_ago))
-            digest = f"seed-{comp_id}-{challenge_position}-{username}"
-            conn.execute("INSERT INTO submissions(competition_id, challenge_id, user_id, flag_digest, result, created_at) VALUES (?, ?, ?, ?, 'correct', ?)", (comp_id, challenge["id"], user_ids[username], digest, solved_at))
+            flag_value = challenge["flag_value"] or f"FLAG{{seed-{comp_id}-{challenge_position}}}"
+            conn.execute(
+                """
+                INSERT INTO submissions(competition_id, challenge_id, user_id, flag_value, flag_digest, result, created_at)
+                VALUES (?, ?, ?, ?, ?, 'correct', ?)
+                """,
+                (comp_id, challenge["id"], user_ids[username], flag_value, flag_value, solved_at),
+            )
             conn.execute("INSERT INTO solves(competition_id, challenge_id, user_id, points, created_at) VALUES (?, ?, ?, ?, ?)", (comp_id, challenge["id"], user_ids[username], challenge["points"], solved_at))
 
         for index, username in enumerate(player_names, start=1):

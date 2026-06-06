@@ -23,13 +23,9 @@ from markupsafe import Markup
 from .config import BASE_DIR, MAX_UPLOAD_BYTES, SESSION_COOKIE, SESSION_DAYS, UPLOAD_DIR
 from .db import connect, init_db, query_all, query_one, transaction
 from .security import (
-    flag_attempt_digest,
-    hash_flag,
-    hash_flag_pattern,
     hash_password,
     sign,
     unsign,
-    verify_flag,
     verify_password,
 )
 from .utils import (
@@ -52,6 +48,7 @@ COMPETITION_PAGE_SIZE = 10
 LIST_PREVIEW_LIMIT = 10
 SCOREBOARD_PREVIEW_LIMIT = 12
 SCOREBOARD_PAGE_SIZE = 50
+SUBMISSION_PAGE_SIZE = 50
 
 
 class Response:
@@ -537,7 +534,12 @@ def challenge_flag_matches(flag: str, challenge) -> bool:
             return re.fullmatch(pattern, value) is not None
         except re.error:
             return False
-    return verify_flag(value, challenge["flag_hash"])
+    flag_value = ""
+    if hasattr(challenge, "keys") and "flag_value" in challenge.keys():
+        flag_value = (challenge["flag_value"] or "").strip()
+    if flag_value:
+        return value == flag_value
+    return False
 
 
 def flag_config_from_form(request: Request, current=None) -> tuple[dict | None, str | None]:
@@ -546,19 +548,22 @@ def flag_config_from_form(request: Request, current=None) -> tuple[dict | None, 
     regex_pattern = request.form.get("flag_pattern", "").strip()
     if flag_type == "regex":
         if not regex_pattern and current and current["flag_type"] == "regex":
-            return {"flag_type": "regex", "flag_hash": current["flag_hash"], "flag_pattern": current["flag_pattern"]}, None
+            return {"flag_type": "regex", "flag_value": "", "flag_pattern": current["flag_pattern"]}, None
         if not regex_pattern:
             return None, "Regex flags require a pattern."
         regex_error = validate_flag_regex(regex_pattern)
         if regex_error:
             return None, regex_error
-        return {"flag_type": "regex", "flag_hash": hash_flag_pattern(regex_pattern), "flag_pattern": regex_pattern}, None
+        return {"flag_type": "regex", "flag_value": "", "flag_pattern": regex_pattern}, None
 
     if not static_flag and current and current["flag_type"] == "static":
-        return {"flag_type": "static", "flag_hash": current["flag_hash"], "flag_pattern": None}, None
+        current_flag_value = current["flag_value"] if "flag_value" in current.keys() else ""
+        if current_flag_value:
+            return {"flag_type": "static", "flag_value": current_flag_value, "flag_pattern": None}, None
+        return None, "Static flags require a complete flag value."
     if not static_flag:
         return None, "Static flags require a complete flag value."
-    return {"flag_type": "static", "flag_hash": hash_flag(static_flag), "flag_pattern": None}, None
+    return {"flag_type": "static", "flag_value": static_flag, "flag_pattern": None}, None
 
 
 def safe_filename(filename: str) -> str:
@@ -933,6 +938,42 @@ def rejudge_competition_solves(conn, competition_id: int) -> int:
     return inserted
 
 
+def submitted_flag_value(flag: str) -> str:
+    return clip(flag.strip(), 512)
+
+
+def insert_submission(conn, competition_id: int, challenge_id: int, user_id: int, flag: str, result: str, created_at: str) -> int:
+    value = submitted_flag_value(flag)
+    cur = conn.execute(
+        """
+        INSERT INTO submissions(competition_id, challenge_id, user_id, flag_value, flag_digest, result, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (competition_id, challenge_id, user_id, value, value, result, created_at),
+    )
+    return cur.lastrowid
+
+
+def selected_submission_ids(request: Request) -> list[int]:
+    selected: list[int] = []
+    for key in request.form:
+        if not key.startswith("submission_"):
+            continue
+        try:
+            selected.append(int(key.removeprefix("submission_")))
+        except ValueError:
+            continue
+    return selected
+
+
+def safe_competition_next_path(comp_id: int | str, next_path: str, fallback: str | None = None) -> str:
+    competition_path = f"/competitions/{comp_id}"
+    default = fallback or competition_path
+    if next_path == competition_path or next_path.startswith(f"{competition_path}/") or next_path.startswith(f"{competition_path}?"):
+        return next_path
+    return default
+
+
 def user_competition_activity_ids(conn, user_id: int, competition_id: int | None = None) -> list[int]:
     if competition_id is not None:
         return [competition_id]
@@ -1065,6 +1106,46 @@ def filter_scoreboard_rows(rows: list, query: str) -> list:
         return rows
     needle = query.lower()
     return [row for row in rows if needle in str(row["username"]).lower()]
+
+
+def competition_submission_rows(conn, competition_id: int, query: str = "", limit: int | None = None) -> list:
+    where = "WHERE s.competition_id = ?"
+    params: list = [competition_id]
+    if query:
+        like = f"%{query}%"
+        where += """
+          AND (
+              u.username LIKE ? OR u.email LIKE ? OR ch.title LIKE ? OR s.result LIKE ?
+              OR COALESCE(NULLIF(s.flag_value, ''), s.flag_digest) LIKE ?
+          )
+        """
+        params.extend([like, like, like, like, like])
+    limit_clause = "LIMIT ?" if limit is not None else ""
+    if limit is not None:
+        params.append(limit)
+    return conn.execute(
+        f"""
+        SELECT s.*, u.username, u.email, u.role AS user_role, ch.title AS challenge_title,
+               COALESCE(NULLIF(s.flag_value, ''), s.flag_digest) AS flag_display,
+               EXISTS(
+                   SELECT 1 FROM competition_hidden_users hu
+                   WHERE hu.competition_id = s.competition_id AND hu.user_id = s.user_id
+               ) AS is_hidden,
+               EXISTS(
+                   SELECT 1 FROM solves solved
+                   WHERE solved.competition_id = s.competition_id
+                     AND solved.challenge_id = s.challenge_id
+                     AND solved.user_id = s.user_id
+               ) AS is_scored
+        FROM submissions s
+        JOIN users u ON u.id = s.user_id
+        JOIN challenges ch ON ch.id = s.challenge_id
+        {where}
+        ORDER BY s.created_at DESC, s.id DESC
+        {limit_clause}
+        """,
+        tuple(params),
+    ).fetchall()
 
 
 def paginate_rows(rows: list, page: int, page_size: int = COMPETITION_PAGE_SIZE) -> dict:
@@ -1353,6 +1434,18 @@ def user_profile(request: Request, username: str) -> Response:
         can_edit_profile = bool(request.current_user and request.current_user["id"] == user["id"])
         show_private = bool(can_edit_profile or is_admin(request.current_user))
         status_clause = "" if show_private else "AND c.status IN ('approved', 'archived')"
+        hidden_joined_clause = "" if show_private else """
+            AND NOT EXISTS (
+                SELECT 1 FROM competition_hidden_users hu
+                WHERE hu.competition_id = r.competition_id AND hu.user_id = r.user_id
+            )
+        """
+        hidden_submission_clause = "" if show_private else """
+            AND NOT EXISTS (
+                SELECT 1 FROM competition_hidden_users hu
+                WHERE hu.competition_id = s.competition_id AND hu.user_id = s.user_id
+            )
+        """
         owned_competitions = conn.execute(
             f"""
             SELECT c.*,
@@ -1373,7 +1466,7 @@ def user_profile(request: Request, username: str) -> Response:
                    ({eligible_player_count_expr("c.id", "c.owner_id")}) AS player_count
             FROM competition_registrations r
             JOIN competitions c ON c.id = r.competition_id
-            WHERE r.user_id = ? {status_clause}
+            WHERE r.user_id = ? {status_clause} {hidden_joined_clause}
             ORDER BY r.created_at DESC
             """,
             (user["id"],),
@@ -1398,13 +1491,21 @@ def user_profile(request: Request, username: str) -> Response:
             FROM submissions s
             JOIN competitions c ON c.id = s.competition_id
             JOIN challenges ch ON ch.id = s.challenge_id
-            WHERE s.user_id = ? {" " if show_private else "AND c.status IN ('approved', 'archived')"}
+            WHERE s.user_id = ? {status_clause} {hidden_submission_clause}
             ORDER BY s.created_at DESC
             LIMIT 50
             """,
             (user["id"],),
         ).fetchall()
-        solved_count = conn.execute("SELECT COUNT(*) AS n FROM solves WHERE user_id = ?", (user["id"],)).fetchone()["n"]
+        solved_count = conn.execute(
+            f"""
+            SELECT COUNT(*) AS n
+            FROM solves s
+            JOIN competitions c ON c.id = s.competition_id
+            WHERE s.user_id = ? {status_clause} {hidden_submission_clause}
+            """,
+            (user["id"],),
+        ).fetchone()["n"]
     return render(
         request,
         "profile.html",
@@ -1741,18 +1842,19 @@ def competition_import_post(request: Request) -> Response:
             placeholder_flag = f"FLAG{{replace_me_{challenge_slug}}}"
             flag_type = normalize_flag_type(str(item.get("flag_type", "static")))
             flag_pattern = str(item.get("flag_pattern") or "").strip() if flag_type == "regex" else None
-            flag_hash = hash_flag_pattern(flag_pattern) if flag_type == "regex" and flag_pattern else hash_flag(placeholder_flag)
+            flag_value = "" if flag_type == "regex" and flag_pattern else clip(str(item.get("flag_value") or item.get("flag") or placeholder_flag), 512)
             if flag_type == "regex" and not flag_pattern:
                 flag_type = "static"
                 flag_pattern = None
+                flag_value = clip(str(item.get("flag_value") or item.get("flag") or placeholder_flag), 512)
             conn.execute(
                 """
                 INSERT INTO challenges(
-                    competition_id, title, slug, category, tags, body, points, flag_type, flag_hash, flag_pattern,
+                    competition_id, title, slug, category, tags, body, points, flag_type, flag_value, flag_hash, flag_pattern,
                     position, duration_minutes, hint_text, hint_cost, hint_unlock_minutes,
                     opens_at, closes_at, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     comp_id,
@@ -1763,7 +1865,7 @@ def competition_import_post(request: Request) -> Response:
                     clip(str(item.get("body", "")), 8000) or "Imported challenge body.",
                     nonnegative_int(item.get("points", 100), 100, 1),
                     flag_type,
-                    flag_hash,
+                    flag_value,
                     flag_pattern,
                     index,
                     duration,
@@ -2004,22 +2106,7 @@ def competition_detail(request: Request, comp_id: str) -> Response:
         ).fetchall()
         audit_events = []
         if manager:
-            recent_submissions = conn.execute(
-                """
-                SELECT s.*, u.username, u.role AS user_role, ch.title AS challenge_title,
-                       EXISTS(
-                           SELECT 1 FROM competition_hidden_users hu
-                           WHERE hu.competition_id = s.competition_id AND hu.user_id = s.user_id
-                       ) AS is_hidden
-                FROM submissions s
-                JOIN users u ON u.id = s.user_id
-                JOIN challenges ch ON ch.id = s.challenge_id
-                WHERE s.competition_id = ?
-                ORDER BY s.created_at DESC
-                LIMIT 30
-                """,
-                (comp_id,),
-            ).fetchall()
+            recent_submissions = competition_submission_rows(conn, int(comp_id), limit=30)
             invites = conn.execute(
                 """
                 SELECT i.*, u.username AS creator_name
@@ -2069,7 +2156,8 @@ def competition_detail(request: Request, comp_id: str) -> Response:
         if request.current_user:
             my_submissions = conn.execute(
                 """
-                SELECT s.*, ch.title AS challenge_title
+                SELECT s.*, ch.title AS challenge_title,
+                       COALESCE(NULLIF(s.flag_value, ''), s.flag_digest) AS flag_display
                 FROM submissions s
                 JOIN challenges ch ON ch.id = s.challenge_id
                 WHERE s.competition_id = ? AND s.user_id = ?
@@ -2121,6 +2209,7 @@ def competition_scoreboard(request: Request, comp_id: str) -> Response:
         return error_page(request, 404, "Competition not found.")
     if not can_view_competition(request.current_user, competition):
         return error_page(request, 404, "Competition not found.")
+    manager = can_manage_competition(request.current_user, competition)
     q = clip(request.query.get("q", ""), 80)
     page = nonnegative_int(request.query.get("page", "1"), 1, 1)
     with connect() as conn:
@@ -2138,7 +2227,81 @@ def competition_scoreboard(request: Request, comp_id: str) -> Response:
         server_now=server_now,
         ends_at=ends_at,
         q=q,
+        manager=manager,
     )
+
+
+@route("GET", r"/competitions/(?P<comp_id>\d+)/submissions")
+def competition_submissions(request: Request, comp_id: str) -> Response:
+    missing = require_login(request)
+    if missing:
+        return missing
+    competition = competition_by_id(int(comp_id))
+    if not competition:
+        return error_page(request, 404, "Competition not found.")
+    if not can_manage_competition(request.current_user, competition):
+        return error_page(request, 403, "You do not have permission to view submissions for this competition.")
+    q = clip(request.query.get("q", ""), 80)
+    page = nonnegative_int(request.query.get("page", "1"), 1, 1)
+    with connect() as conn:
+        rows = competition_submission_rows(conn, int(comp_id), q)
+    return render(
+        request,
+        "submissions.html",
+        competition=competition,
+        paginated=paginate_rows(rows, page, SUBMISSION_PAGE_SIZE),
+        submission_page_size=SUBMISSION_PAGE_SIZE,
+        q=q,
+    )
+
+
+@route("POST", r"/competitions/(?P<comp_id>\d+)/submissions/bulk")
+def competition_submissions_bulk(request: Request, comp_id: str) -> Response:
+    missing = require_login(request)
+    if missing:
+        return missing
+    competition = competition_by_id(int(comp_id))
+    if not competition:
+        return error_page(request, 404, "Competition not found.")
+    if not can_manage_competition(request.current_user, competition):
+        return error_page(request, 403, "You do not have permission to manage submissions for this competition.")
+    action = request.form.get("action", "")
+    selected_ids = selected_submission_ids(request)
+    next_path = safe_competition_next_path(comp_id, request.form.get("next", ""), f"/competitions/{comp_id}/submissions")
+    if action not in ("pass", "delete"):
+        return redirect(with_error(next_path, "Choose a valid submission action."))
+    if not selected_ids:
+        return redirect(with_error(next_path, "Select at least one submission."))
+    placeholders = ",".join("?" for _ in selected_ids)
+    params = [int(comp_id), *selected_ids]
+    with transaction() as conn:
+        count = conn.execute(
+            f"SELECT COUNT(*) AS n FROM submissions WHERE competition_id = ? AND id IN ({placeholders})",
+            tuple(params),
+        ).fetchone()["n"]
+        if count < 1:
+            return redirect(with_error(next_path, "No matching submissions were selected."))
+        if action == "pass":
+            conn.execute(
+                f"UPDATE submissions SET result = 'correct' WHERE competition_id = ? AND id IN ({placeholders})",
+                tuple(params),
+            )
+        else:
+            conn.execute(
+                f"DELETE FROM submissions WHERE competition_id = ? AND id IN ({placeholders})",
+                tuple(params),
+            )
+        solved_count = rejudge_competition_solves(conn, int(comp_id))
+        audit(
+            conn,
+            request.current_user["id"],
+            f"{action}_submissions",
+            "competition",
+            int(comp_id),
+            {"selected": count, "solves": solved_count},
+        )
+    verb = "Passed" if action == "pass" else "Deleted"
+    return redirect(with_notice(next_path, f"{verb} {count} submissions. {solved_count} solves are currently scored."))
 
 
 @route("GET", r"/competitions/(?P<comp_id>\d+)/challenges/new")
@@ -2200,11 +2363,11 @@ def challenge_create(request: Request, comp_id: str) -> Response:
         cur = conn.execute(
             """
             INSERT INTO challenges(
-                competition_id, title, slug, category, tags, body, points, flag_type, flag_hash, flag_pattern,
+                competition_id, title, slug, category, tags, body, points, flag_type, flag_value, flag_hash, flag_pattern,
                 position, duration_minutes, hint_text, hint_cost, hint_unlock_minutes,
                 opens_at, closes_at, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 comp_id,
@@ -2215,7 +2378,7 @@ def challenge_create(request: Request, comp_id: str) -> Response:
                 body,
                 points,
                 flag_config["flag_type"],
-                flag_config["flag_hash"],
+                flag_config["flag_value"],
                 flag_config["flag_pattern"],
                 position,
                 duration,
@@ -2291,7 +2454,7 @@ def challenge_update(request: Request, challenge_id: str) -> Response:
             """
             UPDATE challenges
             SET title = ?, slug = ?, category = ?, tags = ?, body = ?, points = ?,
-                flag_type = ?, flag_hash = ?, flag_pattern = ?,
+                flag_type = ?, flag_value = ?, flag_hash = '', flag_pattern = ?,
                 duration_minutes = ?, hint_text = ?, hint_cost = ?, hint_unlock_minutes = ?, updated_at = ?
             WHERE id = ?
             """,
@@ -2303,7 +2466,7 @@ def challenge_update(request: Request, challenge_id: str) -> Response:
                 body,
                 points,
                 flag_config["flag_type"],
-                flag_config["flag_hash"],
+                flag_config["flag_value"],
                 flag_config["flag_pattern"],
                 duration,
                 hint_text,
@@ -2516,8 +2679,9 @@ def competition_hide_user_lookup(request: Request, comp_id: str) -> Response:
         return error_page(request, 403, "You do not have permission to hide users in this competition.")
     lookup = form_text(request, "username", 160)
     reason = form_text(request, "reason", 500)
+    next_path = safe_competition_next_path(comp_id, request.form.get("next", ""), f"/competitions/{comp_id}")
     if not lookup:
-        return redirect(with_error(f"/competitions/{comp_id}", "Enter a username, email, or user id to hide."))
+        return redirect(with_error(next_path, "Enter a username, email, or user id to hide."))
     numeric_id = int(lookup) if lookup.isdigit() else -1
     with transaction() as conn:
         target = conn.execute(
@@ -2525,13 +2689,13 @@ def competition_hide_user_lookup(request: Request, comp_id: str) -> Response:
             (lookup, lookup, numeric_id),
         ).fetchone()
         if not target:
-            return redirect(with_error(f"/competitions/{comp_id}", "User not found."))
+            return redirect(with_error(next_path, "User not found."))
         try:
             solved_count = hide_user_in_competition(conn, competition, target, request.current_user["id"], reason)
         except ValueError as exc:
-            return redirect(with_error(f"/competitions/{comp_id}", str(exc)))
+            return redirect(with_error(next_path, str(exc)))
         audit(conn, request.current_user["id"], "hide_competition_user", "user", target["id"], {"competition_id": int(comp_id), "solves": solved_count})
-    return redirect(with_notice(f"/competitions/{comp_id}", f"{target['username']} is hidden from this competition."))
+    return redirect(with_notice(next_path, f"{target['username']} is hidden from this competition."))
 
 
 @route("POST", r"/competitions/(?P<comp_id>\d+)/hidden-users/(?P<user_id>\d+)/hide")
@@ -2545,6 +2709,7 @@ def competition_hide_user(request: Request, comp_id: str, user_id: str) -> Respo
     if not can_manage_competition(request.current_user, competition):
         return error_page(request, 403, "You do not have permission to hide users in this competition.")
     reason = form_text(request, "reason", 500)
+    next_path = safe_competition_next_path(comp_id, request.form.get("next", ""), f"/competitions/{comp_id}")
     with transaction() as conn:
         target = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         if not target:
@@ -2552,9 +2717,9 @@ def competition_hide_user(request: Request, comp_id: str, user_id: str) -> Respo
         try:
             solved_count = hide_user_in_competition(conn, competition, target, request.current_user["id"], reason)
         except ValueError as exc:
-            return redirect(with_error(f"/competitions/{comp_id}", str(exc)))
+            return redirect(with_error(next_path, str(exc)))
         audit(conn, request.current_user["id"], "hide_competition_user", "user", int(user_id), {"competition_id": int(comp_id), "solves": solved_count})
-    return redirect(with_notice(f"/competitions/{comp_id}", f"{target['username']} is hidden from this competition."))
+    return redirect(with_notice(next_path, f"{target['username']} is hidden from this competition."))
 
 
 @route("POST", r"/competitions/(?P<comp_id>\d+)/hidden-users/(?P<user_id>\d+)/unhide")
@@ -2567,6 +2732,7 @@ def competition_unhide_user(request: Request, comp_id: str, user_id: str) -> Res
         return error_page(request, 404, "Competition not found.")
     if not can_manage_competition(request.current_user, competition):
         return error_page(request, 403, "You do not have permission to unhide users in this competition.")
+    next_path = safe_competition_next_path(comp_id, request.form.get("next", ""), f"/competitions/{comp_id}")
     with transaction() as conn:
         target = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         if not target:
@@ -2574,7 +2740,7 @@ def competition_unhide_user(request: Request, comp_id: str, user_id: str) -> Res
         conn.execute("DELETE FROM competition_hidden_users WHERE competition_id = ? AND user_id = ?", (comp_id, user_id))
         solved_count = rejudge_competition_solves(conn, int(comp_id))
         audit(conn, request.current_user["id"], "unhide_competition_user", "user", int(user_id), {"competition_id": int(comp_id), "solves": solved_count})
-    return redirect(with_notice(f"/competitions/{comp_id}", f"{target['username']} is visible in this competition again."))
+    return redirect(with_notice(next_path, f"{target['username']} is visible in this competition again."))
 
 
 @route("GET", r"/competitions/(?P<comp_id>\d+)/export.json")
@@ -2590,7 +2756,7 @@ def competition_export(request: Request, comp_id: str) -> Response:
     with connect() as conn:
         challenges = conn.execute(
             """
-            SELECT title, slug, category, tags, body, points, flag_type, flag_pattern, position,
+            SELECT title, slug, category, tags, body, points, flag_type, flag_value, flag_pattern, position,
                    duration_minutes, hint_text, hint_cost, hint_unlock_minutes
             FROM challenges
             WHERE competition_id = ?
@@ -2697,7 +2863,6 @@ def submit_flag(request: Request, challenge_id: str) -> Response:
     flag = request.form.get("flag", "")
     if not flag.strip():
         return redirect(with_error("/competitions", "Enter a flag."))
-    digest = flag_attempt_digest(flag)
     with transaction() as conn:
         challenge = conn.execute(
             """
@@ -2723,35 +2888,17 @@ def submit_flag(request: Request, challenge_id: str) -> Response:
         if not registered:
             return redirect(with_error(f"/competitions/{comp_id}", "Join the competition before submitting flags."))
         if challenge["competition_status"] != "approved" or not (challenge["opens_at"] <= now < challenge["closes_at"]):
-            conn.execute(
-                """
-                INSERT INTO submissions(competition_id, challenge_id, user_id, flag_digest, result, created_at)
-                VALUES (?, ?, ?, ?, 'closed', ?)
-                """,
-                (comp_id, challenge_id, request.current_user["id"], digest, now),
-            )
+            insert_submission(conn, comp_id, int(challenge_id), request.current_user["id"], flag, "closed", now)
             return redirect(with_error(f"/competitions/{comp_id}", "This challenge is not open right now. Submission was not scored."))
         already = conn.execute(
             "SELECT 1 FROM solves WHERE user_id = ? AND challenge_id = ?",
             (request.current_user["id"], challenge_id),
         ).fetchone()
         if already:
-            conn.execute(
-                """
-                INSERT INTO submissions(competition_id, challenge_id, user_id, flag_digest, result, created_at)
-                VALUES (?, ?, ?, ?, 'duplicate', ?)
-                """,
-                (comp_id, challenge_id, request.current_user["id"], digest, now),
-            )
+            insert_submission(conn, comp_id, int(challenge_id), request.current_user["id"], flag, "duplicate", now)
             return redirect(with_notice(f"/competitions/{comp_id}", "You already solved this challenge. This submission was not scored again."))
         if not challenge_flag_matches(flag, challenge):
-            conn.execute(
-                """
-                INSERT INTO submissions(competition_id, challenge_id, user_id, flag_digest, result, created_at)
-                VALUES (?, ?, ?, ?, 'wrong', ?)
-                """,
-                (comp_id, challenge_id, request.current_user["id"], digest, now),
-            )
+            insert_submission(conn, comp_id, int(challenge_id), request.current_user["id"], flag, "wrong", now)
             return redirect(with_error(f"/competitions/{comp_id}", "Incorrect flag."))
         try:
             conn.execute(
@@ -2766,13 +2913,7 @@ def submit_flag(request: Request, challenge_id: str) -> Response:
         except sqlite3.IntegrityError:
             result = "duplicate"
             message = "You already solved this challenge. This submission was not scored again."
-        conn.execute(
-            """
-            INSERT INTO submissions(competition_id, challenge_id, user_id, flag_digest, result, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (comp_id, challenge_id, request.current_user["id"], digest, result, now),
-        )
+        insert_submission(conn, comp_id, int(challenge_id), request.current_user["id"], flag, result, now)
         audit(conn, request.current_user["id"], f"submit_{result}", "challenge", int(challenge_id))
     return redirect(with_notice(f"/competitions/{comp_id}", message))
 
@@ -2811,6 +2952,7 @@ def competition_state(request: Request, comp_id: str) -> Response:
             "scoreboard_total": len(full_board),
             "scoreboard": [
                 {
+                    "user_id": row["user_id"],
                     "username": row["username"],
                     "score": row["score"],
                     "solved_count": row["solved_count"],

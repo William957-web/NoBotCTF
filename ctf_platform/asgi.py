@@ -125,6 +125,7 @@ def build_competition_state(comp_id: int) -> dict:
         "scoreboard_total": len(full_board),
         "scoreboard": [
             {
+                "user_id": row["user_id"],
                 "username": row["username"],
                 "score": row["score"],
                 "solved_count": row["solved_count"],
