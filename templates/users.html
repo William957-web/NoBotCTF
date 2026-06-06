@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Users · {{ platform_name }}{% endblock %}
+{% block content %}
+<section class="page-section split">
+  <div>
+    <h2>users</h2>
+    <p class="muted">Browse platform users and open their profiles.</p>
+  </div>
+  <form method="get" action="/users" class="inline-form search-form">
+    <input name="q" value="{{ q }}" maxlength="80" placeholder="username / display / team">
+    <button class="button primary" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+    {% if q %}
+    <a class="button" href="/users"><i class="fa-solid fa-xmark"></i> Clear</a>
+    {% endif %}
+  </form>
+</section>
+
+<section class="page-section">
+  <div class="split">
+    <div>
+      <h2>{% if q %}search results{% else %}all users{% endif %}</h2>
+      <p class="muted">{{ users|length }} users{% if q %} matching "{{ q }}"{% endif %}.</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>User</th><th>Role</th><th>Affiliation</th><th>Joined CTFs</th><th>Hosted</th><th>Solves</th><th>Created</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for user in users %}
+        <tr>
+          <td>
+            <a href="/users/{{ user.username }}">{{ user.display_name or user.username }}</a>
+            <div class="muted">@{{ user.username }}</div>
+          </td>
+          <td><span class="badge {{ user.role }}">{{ user.role }}</span></td>
+          <td>{{ user.affiliation or '-' }}</td>
+          <td>{{ user.joined_count }}</td>
+          <td>{{ user.hosted_count }}</td>
+          <td>{{ user.solve_count }}</td>
+          <td>{{ user.created_at|local_time }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="muted">No users found.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

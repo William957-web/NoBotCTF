@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{% if challenge %}Edit challenge{% else %}New challenge{% endif %} · {{ platform_name }}{% endblock %}
+{% block content %}
+<article class="page-section narrow">
+  <h2>{% if challenge %}edit challenge{% else %}new challenge{% endif %}</h2>
+  <p class="muted">{{ competition.title }} · starts {{ competition.starts_at|local_time }} · windows are derived from challenge order and duration.</p>
+  {% if form_error %}<div class="flash flash-error">{{ form_error }}</div>{% endif %}
+  <form method="post" action="{% if challenge %}/challenges/{{ challenge.id }}/edit{% else %}/competitions/{{ competition.id }}/challenges{% endif %}" class="form-grid" enctype="multipart/form-data">
+    {{ csrf_input() }}
+    <label>Challenge title
+      <input name="title" required maxlength="120" value="{{ form.title if form else (challenge.title if challenge else '') }}">
+    </label>
+    <label>Slug
+      <input name="slug" maxlength="80" value="{{ form.slug if form else (challenge.slug if challenge else '') }}" placeholder="optional-ascii-slug">
+    </label>
+    <div class="two-col">
+      <label>Category
+        <input name="category" maxlength="40" value="{{ form.category if form else (challenge.category if challenge else 'web') }}">
+      </label>
+      <label>Points
+        <input name="points" type="number" min="1" required value="{{ form.points if form else (challenge.points if challenge else 100) }}">
+      </label>
+    </div>
+    <label>Challenge statement <span class="muted">Markdown</span>
+      <textarea name="body" rows="9" required maxlength="8000">{{ form.body if form else (challenge.body if challenge else '') }}</textarea>
+    </label>
+    {% set current_flag_type = form.flag_type if form else (challenge.flag_type if challenge else 'static') %}
+    <label>Flag type
+      <select name="flag_type" data-flag-mode>
+        <option value="static" {% if current_flag_type != 'regex' %}selected{% endif %}>static</option>
+        <option value="regex" {% if current_flag_type == 'regex' %}selected{% endif %}>regex</option>
+      </select>
+    </label>
+    <label data-flag-group="static">Static flag {% if challenge %}<span class="muted">leave blank to keep the current static flag</span>{% endif %}
+      <input name="flag" autocomplete="off" placeholder="FLAG{example}">
+    </label>
+    <label data-flag-group="regex">Regex pattern {% if challenge and challenge.flag_type == 'regex' %}<span class="muted">leave blank to keep the current regex</span>{% endif %}
+      <input name="flag_pattern" autocomplete="off" value="{{ form.flag_pattern if form else (challenge.flag_pattern if challenge and challenge.flag_type == 'regex' else '') }}" placeholder="FLAG\\{user-[0-9]+\\}">
+    </label>
+    <label>Dist file <span class="muted">{% if challenge %}optional; a new upload becomes the latest download{% else %}optional{% endif %}</span>
+      <input name="dist_file" type="file">
+    </label>
+    <label>Duration minutes
+      <input name="duration_minutes" type="number" min="1" required value="{{ form.duration_minutes if form else default_duration }}">
+    </label>
+    <div class="form-subsection">
+      <h3>hint</h3>
+      <label>Hint text
+        <textarea name="hint_text" rows="4" maxlength="1200">{{ form.hint_text if form else (challenge.hint_text if challenge else '') }}</textarea>
+      </label>
+      <div class="two-col">
+        <label>Hint cost
+          <input name="hint_cost" type="number" min="0" value="{{ form.hint_cost if form else (challenge.hint_cost if challenge else 0) }}">
+        </label>
+        <label>Unlock after minutes
+          <input name="hint_unlock_minutes" type="number" min="0" value="{{ form.hint_unlock_minutes if form else (challenge.hint_unlock_minutes if challenge else 0) }}">
+        </label>
+      </div>
+    </div>
+    <div class="action-row">
+      <button class="button primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save challenge</button>
+      <a class="button" href="/competitions/{{ competition.id }}"><i class="fa-solid fa-arrow-left"></i> Back</a>
+    </div>
+  </form>
+</article>
+{% endblock %}

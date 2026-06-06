@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Competitions · {{ platform_name }}{% endblock %}
+{% block content %}
+<section class="page-section split">
+  <div>
+    <h2>competitions</h2>
+    <p class="muted">Running, upcoming, and archived CTFs are separated by server-time schedule.</p>
+  </div>
+  {% if current_user and current_user.role in ['organizer', 'admin'] %}
+  <div class="action-row align-end">
+    <a class="button" href="/competitions/import"><i class="fa-solid fa-file-import"></i> Import</a>
+    <a class="button primary" href="/competitions/new"><i class="fa-solid fa-plus"></i> New competition</a>
+  </div>
+  {% endif %}
+</section>
+
+{% if browse_section %}
+<section class="page-section">
+  <div class="split">
+    <div>
+      <h2>{{ browse_label }}</h2>
+      <p class="muted">Page {{ paginated.page }} of {{ paginated.total_pages }} · {{ paginated.total }} competitions</p>
+    </div>
+    <div class="action-row align-end">
+      <a class="button" href="/competitions"><i class="fa-solid fa-arrow-left"></i> Back to overview</a>
+    </div>
+  </div>
+  {% set competitions = paginated["items"] %}
+  {% set empty_label = 'No competitions in this section.' %}
+  {% include "partials/competition_table.html" %}
+  <div class="pagination-row">
+    {% if paginated.has_prev %}
+    <a class="button" href="/competitions?section={{ browse_section }}&page={{ paginated.prev_page }}"><i class="fa-solid fa-chevron-left"></i> Previous</a>
+    {% endif %}
+    {% if paginated.has_next %}
+    <a class="button primary" href="/competitions?section={{ browse_section }}&page={{ paginated.next_page }}">Next <i class="fa-solid fa-chevron-right"></i></a>
+    {% endif %}
+  </div>
+</section>
+{% else %}
+  <section class="page-section">
+    <div class="split">
+      <div>
+        <h2>running CTFs</h2>
+        <p class="muted">Showing latest {{ running_competitions|length }} of {{ section_counts.running }}.</p>
+      </div>
+      {% if section_counts.running > preview_limit %}
+      <div class="action-row align-end">
+        <a class="button" href="/competitions?section=running">SHOW MORE</a>
+      </div>
+      {% endif %}
+    </div>
+    {% set competitions = running_competitions %}
+    {% set empty_label = 'No running CTF right now.' %}
+    {% include "partials/competition_table.html" %}
+  </section>
+
+  <section class="page-section">
+    <div class="split">
+      <div>
+        <h2>upcoming CTFs</h2>
+        <p class="muted">Showing latest {{ upcoming_competitions|length }} of {{ section_counts.upcoming }}.</p>
+      </div>
+      {% if section_counts.upcoming > preview_limit %}
+      <div class="action-row align-end">
+        <a class="button" href="/competitions?section=upcoming">SHOW MORE</a>
+      </div>
+      {% endif %}
+    </div>
+    {% set competitions = upcoming_competitions %}
+    {% set empty_label = 'No upcoming CTFs scheduled.' %}
+    {% include "partials/competition_table.html" %}
+  </section>
+
+  <section class="page-section">
+    <div class="split">
+      <div>
+        <h2>archived CTFs</h2>
+        <p class="muted">Showing latest {{ archived_competitions|length }} of {{ section_counts.archived }}.</p>
+      </div>
+      {% if section_counts.archived > preview_limit %}
+      <div class="action-row align-end">
+        <a class="button" href="/competitions?section=archived">SHOW MORE</a>
+      </div>
+      {% endif %}
+    </div>
+    {% set competitions = archived_competitions %}
+    {% set empty_label = 'No archived CTFs yet.' %}
+    {% include "partials/competition_table.html" %}
+  </section>
+{% endif %}
+
+{% if my_competitions %}
+<section class="page-section">
+  <h2>my drafts / pending review</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Competition</th><th>Status</th><th>Starts</th><th>Ends</th><th>Challenges</th><th>Updated</th></tr></thead>
+      <tbody>
+      {% for comp in my_competitions %}
+        <tr>
+          <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a></td>
+          <td><span class="badge {{ comp.status }}">{{ comp.status }}</span></td>
+          <td>{{ comp.starts_at|local_time }}</td>
+          <td>{{ comp.ends_at|local_time }}</td>
+          <td>{{ comp.challenge_count }}</td>
+          <td>{{ comp.updated_at|local_time }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

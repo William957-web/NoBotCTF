@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Import competition · {{ platform_name }}{% endblock %}
+{% block content %}
+<article class="page-section narrow">
+  <h2>import competition</h2>
+  <p class="muted">Paste a JSON export. Imported static flags become placeholders and should be edited before review.</p>
+  {% if form_error %}<div class="flash flash-error">{{ form_error }}</div>{% endif %}
+  <form method="post" action="/competitions/import" class="form-grid">
+    {{ csrf_input() }}
+    <label>Export JSON
+      <textarea name="config_json" rows="18" required>{{ form.config_json if form else '' }}</textarea>
+    </label>
+    <div class="action-row">
+      <button class="button primary" type="submit"><i class="fa-solid fa-file-import"></i> Import draft</button>
+      <a class="button" href="/competitions"><i class="fa-solid fa-arrow-left"></i> Back</a>
+    </div>
+  </form>
+</article>
+{% endblock %}

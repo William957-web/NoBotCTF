@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{% if competition %}Edit competition{% else %}New competition{% endif %} · {{ platform_name }}{% endblock %}
+{% block content %}
+<article class="page-section narrow">
+  <h2>{% if competition %}edit competition{% else %}new competition{% endif %}</h2>
+  <p class="muted">Competitions become visible to players only after admin approval.</p>
+  {% if form_error %}<div class="flash flash-error">{{ form_error }}</div>{% endif %}
+  <form method="post" action="{% if competition %}/competitions/{{ competition.id }}/edit{% else %}/competitions{% endif %}" class="form-grid">
+    {{ csrf_input() }}
+    <label>Competition title
+      <input name="title" required maxlength="120" value="{{ form.title if form else (competition.title if competition else '') }}">
+    </label>
+    <label>Slug
+      <input name="slug" maxlength="80" value="{{ form.slug if form else (competition.slug if competition else '') }}" placeholder="optional-ascii-slug">
+    </label>
+    <label>Summary
+      <textarea name="summary" rows="3" maxlength="1000">{{ form.summary if form else (competition.summary if competition else '') }}</textarea>
+    </label>
+    <label>Start time
+      <input name="starts_at" type="datetime-local" required value="{{ form.starts_at if form else (competition.starts_at|local_input if competition else default_start) }}">
+    </label>
+    <div class="two-col">
+      <label>Play mode
+        {% set team_mode = form.team_mode if form else (competition.team_mode if competition else 'individual') %}
+        <select name="team_mode">
+          <option value="individual" {% if team_mode == 'individual' %}selected{% endif %}>individual players</option>
+          <option value="teams" {% if team_mode == 'teams' %}selected{% endif %}>team-based CTF</option>
+        </select>
+      </label>
+      <label>Scoring
+        {% set scoring_mode = form.scoring_mode if form else (competition.scoring_mode if competition else 'fixed') %}
+        <select name="scoring_mode">
+          <option value="fixed" {% if scoring_mode == 'fixed' %}selected{% endif %}>fixed points</option>
+          <option value="dynamic" {% if scoring_mode == 'dynamic' %}selected{% endif %}>dynamic scoring</option>
+        </select>
+      </label>
+    </div>
+    <div class="two-col">
+      <label>Scoreboard freeze minutes
+        <input name="scoreboard_freeze_minutes" type="number" min="0" value="{{ form.scoreboard_freeze_minutes if form else (competition.scoreboard_freeze_minutes if competition else 0) }}">
+      </label>
+      <label>Scoreboard preview rows
+        <input name="scoreboard_preview_limit" type="number" min="1" max="100" value="{{ form.scoreboard_preview_limit if form else (competition.scoreboard_preview_limit if competition else default_scoreboard_preview_limit) }}">
+      </label>
+    </div>
+    <label>Writeup URL
+      <input name="writeup_url" maxlength="500" placeholder="https://..." value="{{ form.writeup_url if form else (competition.writeup_url if competition else '') }}">
+    </label>
+    <label class="check-row">
+      {% set registration_open = form.registration_open == 'on' if form else (competition.registration_open if competition else true) %}
+      <input name="registration_open" type="checkbox" {% if registration_open %}checked{% endif %}>
+      <span>Registration open</span>
+    </label>
+    <label>Rules
+      <textarea name="rules" rows="8" maxlength="4000">{{ form.rules if form else (competition.rules if competition else '') }}</textarea>
+    </label>
+    <div class="action-row">
+      <button class="button primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+      {% if competition %}<a class="button" href="/competitions/{{ competition.id }}"><i class="fa-solid fa-arrow-left"></i> Back</a>{% endif %}
+    </div>
+  </form>
+</article>
+{% endblock %}

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Admin · {{ platform_name }}{% endblock %}
+{% block content %}
+<section class="page-section">
+  <p class="terminal-line">$ admin.review --queue</p>
+  <h2>organizer applications</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>User</th><th>Reason</th><th>Status</th><th>Submitted</th><th>Review</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for app in applications %}
+        <tr>
+          <td><a href="/users/{{ app.username }}">{{ app.username }}</a><div class="muted">{{ app.email }}</div></td>
+          <td class="wide-cell">{{ app.reason }}</td>
+          <td><span class="badge {{ app.status }}">{{ app.status }}</span>{% if app.review_note %}<div class="muted">{{ app.review_note }}</div>{% endif %}</td>
+          <td>{{ app.created_at|local_time }}</td>
+          <td>
+            {% if app.status == 'pending' %}
+            <form method="post" action="/admin/organizer-applications/{{ app.id }}/review" class="stacked-actions">
+              {{ csrf_input() }}
+              <input name="review_note" maxlength="1000" placeholder="note">
+              <div class="action-row">
+                <button class="button small primary" name="decision" value="approved" type="submit"><i class="fa-solid fa-check"></i> Approve</button>
+                <button class="button small danger" name="decision" value="rejected" type="submit"><i class="fa-solid fa-xmark"></i> Reject</button>
+              </div>
+            </form>
+            {% else %}
+            <span class="muted">{{ app.reviewed_at|local_time }}</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="page-section">
+  <h2>competitions</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Competition</th><th>Organizer</th><th>Status</th><th>Window</th><th>Mode</th><th>Challenges</th><th>Players</th><th>Review</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for comp in competitions %}
+        <tr>
+          <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a><div class="muted">/{{ comp.slug }}</div></td>
+          <td><a href="/users/{{ comp.owner_name }}">{{ comp.owner_name }}</a></td>
+          <td><span class="badge {{ comp.status }}">{{ comp.status }}</span>{% if comp.review_note %}<div class="muted">{{ comp.review_note }}</div>{% endif %}</td>
+          <td>{{ comp.starts_at|local_time }}<div class="muted">{{ comp.ends_at|local_time }}</div></td>
+          <td>{{ comp.team_mode }}<div class="muted">{{ comp.scoring_mode }}</div></td>
+          <td>{{ comp.challenge_count }}</td>
+          <td>{{ comp.player_count }}</td>
+          <td>
+            <form method="post" action="/admin/competitions/{{ comp.id }}/review" class="stacked-actions">
+              {{ csrf_input() }}
+              <input name="review_note" maxlength="1000" placeholder="review note">
+              <div class="action-row">
+                <button class="button small primary" name="decision" value="approved" type="submit"><i class="fa-solid fa-check"></i> Approve</button>
+                <button class="button small danger" name="decision" value="rejected" type="submit"><i class="fa-solid fa-xmark"></i> Reject</button>
+                <button class="button small" name="decision" value="archived" type="submit"><i class="fa-solid fa-box-archive"></i> Archive</button>
+              </div>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="page-section">
+  <h2>users / players</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Joined</th><th>Solves</th><th>Manage</th><th>Password</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for user in users %}
+        <tr>
+          <td><a href="/users/{{ user.username }}">{{ user.username }}</a><div class="muted">{{ user.email }}</div></td>
+          <td><span class="badge {{ user.role }}">{{ user.role }}</span></td>
+          <td>{% if user.is_active %}<span class="badge ok">active</span>{% else %}<span class="badge danger">disabled</span>{% endif %}</td>
+          <td>{{ user.joined_count }}</td>
+          <td>{{ user.solve_count }}</td>
+          <td>
+            <form method="post" action="/admin/users/{{ user.id }}/role" class="inline-form control-form">
+              {{ csrf_input() }}
+              <select name="role">
+                <option value="player" {% if user.role == 'player' %}selected{% endif %}>player</option>
+                <option value="organizer" {% if user.role == 'organizer' %}selected{% endif %}>organizer</option>
+                <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>admin</option>
+              </select>
+              <button class="button small" type="submit"><i class="fa-solid fa-floppy-disk"></i></button>
+            </form>
+            <form method="post" action="/admin/users/{{ user.id }}/toggle" class="inline-form">
+              {{ csrf_input() }}
+              <button class="button small {% if user.is_active %}danger{% endif %}" type="submit">
+                {% if user.is_active %}<i class="fa-solid fa-user-slash"></i>{% else %}<i class="fa-solid fa-user-check"></i>{% endif %}
+              </button>
+            </form>
+          </td>
+          <td>
+            <form method="post" action="/admin/users/{{ user.id }}/password" class="inline-form control-form">
+              {{ csrf_input() }}
+              <input name="password" type="password" minlength="10" required placeholder="new password">
+              <button class="button small" type="submit" title="Update password"><i class="fa-solid fa-key"></i></button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

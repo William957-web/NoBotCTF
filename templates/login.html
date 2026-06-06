@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Login · {{ platform_name }}{% endblock %}
+{% block content %}
+<article class="page-section narrow">
+  <h2>login</h2>
+  {% if form_error %}<div class="flash flash-error">{{ form_error }}</div>{% endif %}
+  <form method="post" action="/login" class="form-grid">
+    {{ csrf_input() }}
+    <input type="hidden" name="next" value="{{ next_path }}">
+    <label>Username or email
+      <input name="username" required maxlength="160" value="{{ form.username if form else '' }}" autocomplete="username">
+    </label>
+    <label>Password
+      <input name="password" type="password" required autocomplete="current-password">
+    </label>
+    <button class="button primary" type="submit"><i class="fa-solid fa-right-to-bracket"></i> Log in</button>
+  </form>
+  <p class="muted">No account yet? <a href="/register">Register as a player</a></p>
+</article>
+{% endblock %}

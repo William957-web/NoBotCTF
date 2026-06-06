@@ -1,0 +1,447 @@
+{% extends "base.html" %}
+{% block title %}{{ competition.title }} · {{ platform_name }}{% endblock %}
+{% block content %}
+<section class="page-section split">
+  <div>
+    <p class="terminal-line">$ competition.open /{{ competition.slug }}</p>
+    <h2>{{ competition.title }}</h2>
+    <p>{{ competition.summary }}</p>
+    <p class="muted">
+      owner=<a href="/users/{{ competition.owner_name }}">{{ competition.owner_name }}</a> · status=<span class="badge {{ competition.status }}">{{ competition.status }}</span>
+      {% if collaboration_role %} · access=<span class="badge ok">{{ collaboration_role }}</span>{% endif %}
+    </p>
+  </div>
+  <div class="action-row align-end">
+    {% if manager %}
+    <a class="button" href="/competitions/{{ competition.id }}/edit"><i class="fa-solid fa-pen-to-square"></i> Edit competition</a>
+    <a class="button primary" href="/competitions/{{ competition.id }}/challenges/new"><i class="fa-solid fa-plus"></i> New challenge</a>
+    <a class="button" href="/competitions/{{ competition.id }}/export.json"><i class="fa-solid fa-file-export"></i> Export</a>
+    <form method="post" action="/competitions/{{ competition.id }}/submit-review" class="inline-form">
+      {{ csrf_input() }}
+      <button class="button" type="submit"><i class="fa-solid fa-paper-plane"></i> Submit for review</button>
+    </form>
+    {% endif %}
+    {% if can_register and current_user and not registered %}
+    <form method="post" action="/competitions/{{ competition.id }}/register" class="inline-form">
+      {{ csrf_input() }}
+      <button class="button primary" type="submit"><i class="fa-solid fa-person-running"></i> Join competition</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+{% if competition.status not in ['approved', 'archived'] %}
+<div class="flash flash-error">This competition is not approved yet. Only admins, organizers, and collaborators can view it.</div>
+{% endif %}
+
+<section class="page-section metric-grid">
+  <div class="metric">
+    <span class="metric-label">phase</span>
+    <strong>{{ competition_phase }}</strong>
+  </div>
+  <div class="metric">
+    <span class="metric-label">starts</span>
+    <strong>{{ competition.starts_at|local_time }}</strong>
+  </div>
+  <div class="metric">
+    <span class="metric-label">derived ends</span>
+    <strong>{{ ends_at|local_time }}</strong>
+  </div>
+  <div class="metric">
+    <span class="metric-label">registration</span>
+    <strong>{% if competition.registration_open %}open{% else %}closed{% endif %}</strong>
+  </div>
+  <div class="metric">
+    <span class="metric-label">mode</span>
+    <strong>{{ competition.team_mode }}</strong>
+  </div>
+  <div class="metric">
+    <span class="metric-label">scoring</span>
+    <strong>{{ competition.scoring_mode }}</strong>
+  </div>
+</section>
+
+<section class="page-section split">
+  <div>
+    <h2>announcements</h2>
+    <div data-preview-list data-preview-limit="{{ list_preview_limit }}">
+    {% for item in announcements %}
+    <article class="announcement">
+      <h3>{{ item.title }}</h3>
+      <p>{{ item.body }}</p>
+      <p class="muted">{{ item.created_at|local_time }} · {% if item.author_name %}<a href="/users/{{ item.author_name }}">{{ item.author_name }}</a>{% else %}system{% endif %}</p>
+    </article>
+    {% else %}
+    <p class="muted">No announcements yet.</p>
+    {% endfor %}
+    </div>
+  </div>
+  {% if manager %}
+  <form method="post" action="/competitions/{{ competition.id }}/announcements" class="form-grid compact-form">
+    {{ csrf_input() }}
+    <label>Title
+      <input name="title" maxlength="120" required>
+    </label>
+    <label>Body
+      <textarea name="body" rows="4" maxlength="2000" required></textarea>
+    </label>
+    <button class="button small primary" type="submit"><i class="fa-solid fa-bullhorn"></i> Post</button>
+  </form>
+  {% endif %}
+</section>
+
+{% if not public_archive %}
+<section class="page-section live-panel" data-live-state data-state-url="/api/competitions/{{ competition.id }}/state" data-ws-url="/ws/competitions/{{ competition.id }}" data-current-challenge-id="{{ active_challenge.id if active_challenge else '' }}">
+  <div class="split">
+    <div>
+      <h2>live round</h2>
+      {% if active_challenge and competition.status == 'approved' %}
+      <p><span class="badge live">LIVE</span> <span data-live-title>{{ active_challenge.title }}</span></p>
+      <p class="muted">{{ active_challenge.category }} · {{ active_challenge.points }} pts · closes {{ active_challenge.closes_at|local_time }}</p>
+      {% else %}
+      <p><span class="badge">idle</span> No challenge is open right now.</p>
+      {% endif %}
+    </div>
+    <div class="countdown-box">
+      {% if active_challenge and competition.status == 'approved' %}
+      <span class="countdown-label">time left</span>
+      <span class="countdown-value" data-countdown data-deadline="{{ active_challenge.closes_at }}">--:--</span>
+      {% else %}
+      <span class="countdown-label">server time</span>
+      <span class="countdown-value muted">waiting</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if active_challenge and competition.status == 'approved' %}
+  <article class="challenge-body active-challenge-card">
+    <h3>{{ active_challenge.title }}</h3>
+    <div class="markdown-body">{{ active_challenge.body|markdown_safe }}</div>
+    {% if active_file and (registered or collaboration_role) %}
+    <p class="dist-download">
+      <a class="button" href="/challenges/{{ active_challenge.id }}/dist"><i class="fa-solid fa-file-arrow-down"></i> {{ active_file.original_filename }}</a>
+      <span class="muted">{{ active_file.size_bytes }} bytes</span>
+    </p>
+    {% endif %}
+    {% if active_challenge.hint_text %}
+      {% if active_hint_unlocked %}
+      <div class="hint-box">
+        <strong>Hint{% if active_challenge.hint_cost %} · {{ active_challenge.hint_cost }} pts{% endif %}</strong>
+        <p>{{ active_challenge.hint_text }}</p>
+      </div>
+      {% else %}
+      <p class="muted">Hint unlocks {{ active_challenge.hint_unlock_minutes }} minutes after this round opens.</p>
+      {% endif %}
+    {% endif %}
+    {% if current_user %}
+      {% if registered %}
+      <form method="post" action="/challenges/{{ active_challenge.id }}/submit" class="flag-form">
+        {{ csrf_input() }}
+        <input name="flag" required autocomplete="off" placeholder="FLAG{...}">
+        <button class="button primary" type="submit"><i class="fa-solid fa-flag"></i> Submit</button>
+      </form>
+      {% else %}
+      <p class="muted">Join this competition to submit flags.</p>
+      {% endif %}
+    {% else %}
+    <p><a href="/login?next=/competitions/{{ competition.id }}">Log in to submit flags</a></p>
+    {% endif %}
+  </article>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="page-section">
+  <div class="split">
+    <div>
+      <h2>scoreboard</h2>
+      <p class="muted" data-scoreboard-summary>
+        {% if scoreboard_total %}
+        Showing top {{ scoreboard|length }} of {{ scoreboard_total }} players.
+        {% else %}
+        No solves yet.
+        {% endif %}
+      </p>
+      {% if freeze_cutoff %}<p class="muted">Scoreboard is frozen from {{ freeze_cutoff|local_time }} until the competition ends.</p>{% endif %}
+    </div>
+    <div class="action-row align-end">
+      <a class="button" data-scoreboard-full-link href="/competitions/{{ competition.id }}/scoreboard" {% if scoreboard_total <= scoreboard|length %}hidden{% endif %}><i class="fa-solid fa-ranking-star"></i> Full scoreboard</a>
+      <div class="health-panel">
+        <span><i class="fa-solid fa-clock"></i> server {{ server_now|local_time }}</span>
+        <span><i class="fa-solid fa-wifi"></i> live sync</span>
+      </div>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Player</th><th>Score</th><th>Solves</th><th>Last solve</th></tr></thead>
+      <tbody data-scoreboard-body>
+      {% for row in scoreboard %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td><a href="/users/{{ row.username }}">{{ row.username }}</a></td>
+          <td>{{ row.score }}</td>
+          <td>{{ row.solved_count }}</td>
+          <td>{{ row.last_solve|local_time }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">No solves yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if can_see_all_challenges %}
+<section class="page-section">
+  <div class="split">
+    <div>
+      <h2>{% if public_archive %}archived schedule{% else %}schedule{% endif %}</h2>
+      <p class="muted">
+        {% if public_archive %}
+        This CTF is archived, so every challenge is visible.
+        {% else %}
+        Challenge windows are derived from start time plus ordered durations.
+        {% endif %}
+      </p>
+    </div>
+    {% if competition.writeup_url %}
+    <div class="action-row align-end">
+      <a class="button" href="{{ competition.writeup_url }}"><i class="fa-solid fa-book-open"></i> Writeup</a>
+    </div>
+    {% endif %}
+  </div>
+  {% if competition.rules %}
+  <pre>{{ competition.rules }}</pre>
+  {% endif %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          {% if manager %}<th></th>{% endif %}
+          <th>Order</th><th>Challenge</th><th>Duration</th><th>Window</th><th>Category</th><th>Points</th><th>Solves</th><th>Hint</th><th>Dist</th><th>Status</th>{% if manager %}<th></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}" {% if manager %}data-sortable-challenges data-reorder-url="/competitions/{{ competition.id }}/challenges/reorder" data-csrf="{{ request.csrf_token }}"{% endif %}>
+      {% for ch in visible_challenges %}
+        {% set is_live = ch.opens_at <= server_now and ch.closes_at > server_now %}
+        <tr {% if manager %}draggable="true" data-challenge-id="{{ ch.id }}"{% endif %}>
+          {% if manager %}<td class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-lines"></i></td>{% endif %}
+          <td>{{ ch.position }}</td>
+          <td>{% if collaboration_role %}<a href="/challenges/{{ ch.id }}/preview">{{ ch.title }}</a>{% else %}{{ ch.title }}{% endif %}</td>
+          <td>{{ ch.duration_minutes|duration }}</td>
+          <td>{{ ch.opens_at|local_time }}<div class="muted">{{ ch.closes_at|local_time }}</div></td>
+          <td>{{ ch.category }}</td>
+          <td>{{ ch.points }}</td>
+          <td>{{ ch.solve_count }}</td>
+          <td>{% if ch.hint_text %}<span class="badge ok">hint</span>{% else %}<span class="muted">-</span>{% endif %}</td>
+          <td>{% if ch.dist_file_count %}<span class="badge ok">file</span>{% else %}<span class="muted">-</span>{% endif %}</td>
+          <td>{% if is_live and competition.status == 'approved' %}<span class="badge live">LIVE</span>{% elif ch.closes_at <= server_now %}<span class="badge closed">closed</span>{% else %}<span class="badge pending">scheduled</span>{% endif %}</td>
+          {% if manager %}
+          <td class="action-row">
+            <a class="icon-link" href="/challenges/{{ ch.id }}/edit" title="Edit challenge"><i class="fa-solid fa-pen-to-square"></i></a>
+            <form method="post" action="/challenges/{{ ch.id }}/delete" class="inline-form">
+              {{ csrf_input() }}
+              <button class="icon-button danger" type="submit" title="Delete challenge"><i class="fa-solid fa-trash"></i></button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+      {% else %}
+        <tr><td colspan="{% if manager %}12{% else %}10{% endif %}" class="muted">No challenges yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<section class="page-section challenge-locked-panel">
+  <h2>challenge visibility</h2>
+  {% if public_running %}
+  <p class="muted">Only the current live challenge is visible while this CTF is running. The full challenge archive opens after the event ends.</p>
+  {% elif public_upcoming %}
+  <p class="muted">Challenges are hidden until their live windows open.</p>
+  {% else %}
+  <p class="muted">Challenge details are hidden until this competition is approved or archived.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if can_see_all_challenges %}
+<section class="page-section">
+  <h2>{% if public_archive %}challenge archive{% else %}challenge preview set{% endif %}</h2>
+  <div class="archive-challenge-list" data-preview-list data-preview-limit="{{ list_preview_limit }}">
+    {% for ch in visible_challenges %}
+    <article class="challenge-body archive-challenge-card">
+      <div class="split">
+        <div>
+          <h3>#{{ ch.position }} {{ ch.title }}</h3>
+          <p class="muted">{{ ch.category }} · {{ ch.points }} pts · {{ ch.duration_minutes|duration }} · {{ ch.opens_at|local_time }} to {{ ch.closes_at|local_time }}</p>
+        </div>
+        <div class="action-row align-end">
+          {% if collaboration_role %}
+          <a class="button small" href="/challenges/{{ ch.id }}/preview"><i class="fa-solid fa-eye"></i> Preview</a>
+          {% endif %}
+          {% if manager %}
+          <a class="button small" href="/challenges/{{ ch.id }}/edit"><i class="fa-solid fa-pen-to-square"></i> Edit</a>
+          {% endif %}
+        </div>
+      </div>
+      <div class="markdown-body">{{ ch.body|markdown_safe }}</div>
+      {% if ch.dist_file_count %}
+      <p class="dist-download">
+        <a class="button" href="/challenges/{{ ch.id }}/dist"><i class="fa-solid fa-file-arrow-down"></i> {{ ch.latest_file_name or 'dist file' }}</a>
+        {% if ch.latest_file_size %}<span class="muted">{{ ch.latest_file_size }} bytes</span>{% endif %}
+      </p>
+      {% endif %}
+      {% if ch.hint_text %}
+      <div class="hint-box">
+        <strong>Hint{% if ch.hint_cost %} · {{ ch.hint_cost }} pts{% endif %}</strong>
+        <p>{{ ch.hint_text }}</p>
+      </div>
+      {% endif %}
+    </article>
+    {% else %}
+    <p class="muted">No challenges yet.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if manager %}
+<section class="page-section">
+  <div class="split">
+    <div>
+      <h2>collaboration</h2>
+      <p class="muted">Send an invite link to another platform user to edit or preview this competition.</p>
+    </div>
+    <form method="post" action="/competitions/{{ competition.id }}/collaboration-invites" class="inline-form control-form">
+      {{ csrf_input() }}
+      <select name="role">
+        <option value="editor">editor</option>
+        <option value="viewer">viewer</option>
+      </select>
+      <input name="expires_days" type="number" min="1" max="365" value="14" title="Expiry days">
+      <button class="button small primary" type="submit"><i class="fa-solid fa-link"></i> Create link</button>
+    </form>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Link</th><th>Role</th><th>Created</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for invite in invites %}
+        <tr>
+          <td class="wide-cell">
+            <input class="copy-field" readonly value="/collaborate/{{ invite.token }}" data-copy-value="/collaborate/{{ invite.token }}">
+          </td>
+          <td><span class="badge {{ invite.role }}">{{ invite.role }}</span></td>
+          <td>{{ invite.created_at|local_time }}<div class="muted">{{ invite.creator_name or 'system' }}</div></td>
+          <td>{{ invite.expires_at|local_time }}</td>
+          <td>{% if invite.revoked_at %}<span class="badge closed">revoked</span>{% elif invite.expires_at and invite.expires_at <= server_now %}<span class="badge closed">expired</span>{% else %}<span class="badge ok">active</span>{% endif %}</td>
+          <td>
+            {% if not invite.revoked_at %}
+            <div class="action-row">
+              <button class="icon-button" type="button" data-copy-button data-copy-value="/collaborate/{{ invite.token }}" title="Copy link"><i class="fa-solid fa-copy"></i></button>
+              <form method="post" action="/competition-invites/{{ invite.id }}/revoke" class="inline-form">
+                {{ csrf_input() }}
+                <button class="icon-button danger" type="submit" title="Revoke"><i class="fa-solid fa-ban"></i></button>
+              </form>
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="muted">No invite links yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>User</th><th>Role</th><th>Accepted</th><th>Invited by</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for user in collaborators %}
+        <tr>
+          <td><a href="/users/{{ user.username }}">{{ user.username }}</a><div class="muted">{{ user.email }}</div></td>
+          <td><span class="badge {{ user.role }}">{{ user.role }}</span></td>
+          <td>{{ user.accepted_at|local_time }}</td>
+          <td>{{ user.invited_by_name or 'system' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="muted">No collaborators have accepted yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if current_user %}
+<section class="page-section">
+  <h2>my submissions</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Time</th><th>Challenge</th><th>Result</th><th>Digest</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for sub in my_submissions %}
+        <tr>
+          <td>{{ sub.created_at|local_time }}</td>
+          <td>{{ sub.challenge_title }}</td>
+          <td><span class="badge {{ sub.result }}">{{ sub.result }}</span></td>
+          <td><code>{{ sub.flag_digest[:12] }}</code></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="muted">No submissions yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if manager %}
+<section class="page-section">
+  <h2>recent submissions</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Time</th><th>Player</th><th>Challenge</th><th>Result</th><th>Digest</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for sub in recent_submissions %}
+        <tr>
+          <td>{{ sub.created_at|local_time }}</td>
+          <td><a href="/users/{{ sub.username }}">{{ sub.username }}</a></td>
+          <td>{{ sub.challenge_title }}</td>
+          <td><span class="badge {{ sub.result }}">{{ sub.result }}</span></td>
+          <td><code>{{ sub.flag_digest[:12] }}</code></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">No submissions yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="page-section">
+  <h2>audit log</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Metadata</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for event in audit_events %}
+        <tr>
+          <td>{{ event.created_at|local_time }}</td>
+          <td>{% if event.actor_name %}<a href="/users/{{ event.actor_name }}">{{ event.actor_name }}</a>{% else %}system{% endif %}</td>
+          <td>{{ event.action }}</td>
+          <td>{{ event.target_type }} #{{ event.target_id }}</td>
+          <td><code>{{ event.metadata }}</code></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">No audit events yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

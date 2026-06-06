@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ platform_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="/theme/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <div class="content-shell">
+    <header id="header" class="site-header">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true"><i class="fa-solid fa-flag"></i></span>
+        <div id="title">
+          <h1>{{ platform_name }}</h1>
+          <span class="brand-subtitle">time-windowed CTF platform</span>
+        </div>
+      </a>
+      {% if admin_ready %}
+      <nav id="nav" aria-label="Primary navigation">
+        <ul>
+          {% if current_user %}
+          <li><a href="/dashboard">Dashboard</a></li>
+          <li><a href="/competitions">Competitions</a></li>
+          <li><a href="/users">Users</a></li>
+          {% if current_user.role == 'admin' %}
+          <li><a href="/admin">Admin</a></li>
+          {% endif %}
+          <li class="nav-user"><a href="/users/{{ current_user.username }}">{{ current_user.username }}</a> / {{ current_user.role }}</li>
+          <li>
+            <form class="inline-form" method="post" action="/logout">
+              {{ csrf_input() }}
+              <button class="link-button" type="submit">Log out</button>
+            </form>
+          </li>
+          {% else %}
+          <li><a href="/login">Log in</a></li>
+          <li><a href="/register">Register</a></li>
+          <li><a href="/users">Users</a></li>
+          {% endif %}
+          <li>
+            <button class="sound-toggle" type="button" data-sound-toggle title="Toggle notification sounds" aria-label="Toggle notification sounds">
+              <i class="fa-solid fa-volume-xmark" aria-hidden="true"></i>
+            </button>
+          </li>
+        </ul>
+      </nav>
+      {% endif %}
+    </header>
+
+    {% if notice %}
+    <div class="flash flash-ok">{{ notice }}</div>
+    {% endif %}
+    {% if error %}
+    <div class="flash flash-error">{{ error }}</div>
+    {% endif %}
+
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+      <span>server-time rounds</span>
+      <span>sqlite locked writes</span>
+      <span>csrf + scrypt</span>
+    </footer>
+  </div>
+</body>
+</html>

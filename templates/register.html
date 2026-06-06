@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Register · {{ platform_name }}{% endblock %}
+{% block content %}
+<article class="page-section narrow">
+  <h2>register player</h2>
+  {% if form_error %}<div class="flash flash-error">{{ form_error }}</div>{% endif %}
+  <form method="post" action="/register" class="form-grid">
+    {{ csrf_input() }}
+    <label>Username
+      <input name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_]+" value="{{ form.username if form else '' }}" autocomplete="username">
+    </label>
+    <label>Email
+      <input name="email" type="email" required maxlength="160" value="{{ form.email if form else '' }}" autocomplete="email">
+    </label>
+    <label>Password
+      <input name="password" type="password" required minlength="10" autocomplete="new-password">
+    </label>
+    <button class="button primary" type="submit"><i class="fa-solid fa-user-plus"></i> Create player account</button>
+  </form>
+</article>
+{% endblock %}

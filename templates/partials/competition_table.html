@@ -1,0 +1,32 @@
+{% if competitions %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>Competition</th><th>Organizer</th><th>Starts</th><th>Ends</th><th>Challenges</th><th>Players</th><th>Status</th></tr>
+    </thead>
+    <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+    {% for comp in competitions %}
+      <tr>
+        <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a><div class="muted">{{ comp.summary }}</div></td>
+        <td><a href="/users/{{ comp.owner_name }}">{{ comp.owner_name }}</a></td>
+        <td>{{ comp.starts_at|local_time }}</td>
+        <td>{{ comp.ends_at|local_time }}</td>
+        <td>{{ comp.challenge_count }}</td>
+        <td>{{ comp.player_count }}</td>
+        <td>
+          {% if comp.live_title %}
+          <span class="badge live">LIVE</span> {{ comp.live_title }}
+          {% elif comp.status == 'archived' %}
+          <span class="badge archived">archived</span>
+          {% else %}
+          <span class="badge pending">scheduled</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="muted">{{ empty_label|default('No competitions in this section.') }}</p>
+{% endif %}

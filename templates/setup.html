@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Setup · {{ platform_name }}{% endblock %}
+{% block content %}
+<article class="page-section narrow">
+  <p class="terminal-line">$ ctf-platform init --first-admin</p>
+  <h2>Initial Setup</h2>
+  <p class="muted">Create the platform identity and the first admin account. Organizer requests and competitions will require admin review after setup.</p>
+  {% if form_error %}<div class="flash flash-error">{{ form_error }}</div>{% endif %}
+  <form method="post" action="/setup" class="form-grid">
+    {{ csrf_input() }}
+    <label>Platform name
+      <input name="platform_name" required minlength="3" maxlength="80" value="{{ form.platform_name if form else 'Time-Windowed CTF Arena' }}" autocomplete="organization">
+    </label>
+    <label>Admin username
+      <input name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_]+" value="{{ form.username if form else '' }}" autocomplete="username">
+    </label>
+    <label>Email
+      <input name="email" type="email" required maxlength="160" value="{{ form.email if form else '' }}" autocomplete="email">
+    </label>
+    <label>Password
+      <input name="password" type="password" required minlength="10" autocomplete="new-password">
+    </label>
+    <button class="button primary" type="submit"><i class="fa-solid fa-key"></i> Initialize Platform</button>
+  </form>
+</article>
+{% endblock %}

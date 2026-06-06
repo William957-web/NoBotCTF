@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Preview {{ challenge.title }} · {{ platform_name }}{% endblock %}
+{% block content %}
+<section class="page-section split">
+  <div>
+    <p class="terminal-line">$ challenge.preview /{{ challenge.slug }}</p>
+    <h2>{{ challenge.title }}</h2>
+    <p class="muted">
+      {{ competition.title }} · #{{ challenge.position }} · {{ challenge.category }} · {{ challenge.points }} pts · {{ challenge.duration_minutes|duration }}
+    </p>
+    <p class="muted">{{ challenge.opens_at|local_time }} to {{ challenge.closes_at|local_time }}</p>
+  </div>
+  <div class="action-row align-end">
+    <a class="button" href="/competitions/{{ competition.id }}"><i class="fa-solid fa-arrow-left"></i> Back</a>
+    {% if manager %}
+    <a class="button primary" href="/challenges/{{ challenge.id }}/edit"><i class="fa-solid fa-pen-to-square"></i> Edit</a>
+    {% endif %}
+  </div>
+</section>
+
+<section class="page-section live-panel">
+  <article class="challenge-body">
+    <h3>{{ challenge.title }}</h3>
+    <div class="markdown-body">{{ challenge.body|markdown_safe }}</div>
+    {% if dist_file %}
+    <p class="dist-download">
+      <a class="button" href="/challenges/{{ challenge.id }}/dist"><i class="fa-solid fa-file-arrow-down"></i> {{ dist_file.original_filename }}</a>
+      <span class="muted">{{ dist_file.size_bytes }} bytes</span>
+    </p>
+    {% endif %}
+    {% if challenge.hint_text %}
+    <div class="hint-box">
+      <strong>Hint{% if challenge.hint_cost %} · {{ challenge.hint_cost }} pts{% endif %}</strong>
+      <p>{{ challenge.hint_text }}</p>
+      <p class="muted">Unlocks {{ challenge.hint_unlock_minutes }} minutes after round open.</p>
+    </div>
+    {% endif %}
+    <form class="flag-form">
+      <input disabled placeholder="FLAG{...}">
+      <button class="button primary" disabled type="button"><i class="fa-solid fa-flag"></i> Submit</button>
+    </form>
+  </article>
+</section>
+{% endblock %}

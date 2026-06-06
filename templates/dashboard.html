@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · {{ platform_name }}{% endblock %}
+{% block content %}
+<section class="page-section split">
+  <div>
+    <p class="terminal-line">$ whoami</p>
+    <h2><a href="/users/{{ current_user.username }}">{{ current_user.username }}</a></h2>
+    <p class="muted">role={{ current_user.role }} · created={{ current_user.created_at|local_time }}</p>
+  </div>
+  <div class="action-row align-end">
+    {% if current_user.role in ['organizer', 'admin'] %}
+    <a class="button" href="/competitions/import"><i class="fa-solid fa-file-import"></i> Import</a>
+    <a class="button primary" href="/competitions/new"><i class="fa-solid fa-plus"></i> New competition</a>
+    {% endif %}
+    {% if current_user.role == 'admin' %}
+    <a class="button" href="/admin"><i class="fa-solid fa-screwdriver-wrench"></i> Admin panel</a>
+    {% endif %}
+    <a class="button" href="/profile"><i class="fa-solid fa-user-pen"></i> Profile</a>
+  </div>
+</section>
+
+{% if current_user.role == 'player' %}
+<section class="page-section">
+  <h2>organizer request</h2>
+  {% if latest_application and latest_application.status == 'pending' %}
+  <p><span class="badge pending">pending</span> Organizer request submitted. Waiting for admin review.</p>
+  {% elif latest_application and latest_application.status == 'approved' %}
+  <p><span class="badge ok">approved</span> Organizer request approved.</p>
+  {% else %}
+  <form method="post" action="/organizer/apply" class="form-grid">
+    {{ csrf_input() }}
+    <label>Request reason
+      <textarea name="reason" rows="4" required minlength="20" maxlength="2000"></textarea>
+    </label>
+    <button class="button primary" type="submit"><i class="fa-solid fa-paper-plane"></i> Submit organizer request</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if current_user.role in ['organizer', 'admin'] %}
+<section class="page-section">
+  <h2>my competitions</h2>
+  {% if owned_competitions %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>Status</th><th>Window</th><th>Challenges</th><th>Updated</th><th></th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for comp in owned_competitions %}
+        <tr>
+          <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a></td>
+          <td><span class="badge {{ comp.status }}">{{ comp.status }}</span></td>
+          <td>{{ comp.starts_at|local_time }}<div class="muted">{{ comp.ends_at|local_time }}</div></td>
+          <td>{{ comp.challenge_count }}</td>
+          <td>{{ comp.updated_at|local_time }}</td>
+          <td><a class="icon-link" href="/competitions/{{ comp.id }}/edit" title="Edit"><i class="fa-solid fa-pen-to-square"></i></a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No competitions created yet.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if collaborative_competitions %}
+<section class="page-section">
+  <h2>shared with me</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>Access</th><th>Status</th><th>Window</th><th>Challenges</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for comp in collaborative_competitions %}
+        <tr>
+          <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a></td>
+          <td><span class="badge {{ comp.collaboration_role }}">{{ comp.collaboration_role }}</span></td>
+          <td><span class="badge {{ comp.status }}">{{ comp.status }}</span></td>
+          <td>{{ comp.starts_at|local_time }}<div class="muted">{{ comp.ends_at|local_time }}</div></td>
+          <td>{{ comp.challenge_count }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="page-section">
+  <h2>joined competitions</h2>
+  {% if registrations %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Competition</th><th>Status</th><th>Window</th><th>Joined</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for comp in registrations %}
+        <tr>
+          <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a></td>
+          <td><span class="badge {{ comp.status }}">{{ comp.status }}</span></td>
+          <td>{{ comp.starts_at|local_time }}<div class="muted">{{ comp.ends_at|local_time }}</div></td>
+          <td>{{ comp.joined_at|local_time }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No joined competitions yet.</p>
+  {% endif %}
+</section>
+
+<section class="page-section">
+  <div class="split">
+    <div>
+      <h2>recent CTFs</h2>
+      <p class="muted">Showing latest {{ competitions|length }} of {{ competition_count }}.</p>
+    </div>
+    {% if competition_count > preview_limit %}
+    <div class="action-row align-end">
+      <a class="button" href="/competitions">SHOW MORE</a>
+    </div>
+    {% endif %}
+  </div>
+  {% include "partials/competition_table.html" %}
+</section>
+{% endblock %}

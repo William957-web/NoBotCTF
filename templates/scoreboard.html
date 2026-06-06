@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Scoreboard · {{ competition.title }} · {{ platform_name }}{% endblock %}
+{% block content %}
+<section class="page-section split">
+  <div>
+    <p class="terminal-line">$ scoreboard.open /{{ competition.slug }}</p>
+    <h2>{{ competition.title }} scoreboard</h2>
+    <p class="muted">
+      Page {{ paginated.page }} of {{ paginated.total_pages }} · {{ paginated.total }} ranked players
+      {% if freeze_cutoff %} · frozen from {{ freeze_cutoff|local_time }}{% endif %}
+    </p>
+  </div>
+  <div class="action-row align-end">
+    <a class="button" href="/competitions/{{ competition.id }}"><i class="fa-solid fa-arrow-left"></i> Back to competition</a>
+  </div>
+</section>
+
+<section class="page-section">
+  <div class="split">
+    <div>
+      <h2>rankings</h2>
+      <p class="muted">Server time {{ server_now|local_time }}</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Player</th><th>Score</th><th>Solves</th><th>Last solve</th></tr></thead>
+      <tbody>
+      {% set base_rank = (paginated.page - 1) * scoreboard_page_size %}
+      {% for row in paginated["items"] %}
+        <tr>
+          <td>{{ base_rank + loop.index }}</td>
+          <td><a href="/users/{{ row.username }}">{{ row.username }}</a></td>
+          <td>{{ row.score }}</td>
+          <td>{{ row.solved_count }}</td>
+          <td>{{ row.last_solve|local_time }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">No solves yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="pagination-row">
+    {% if paginated.has_prev %}
+    <a class="button" href="/competitions/{{ competition.id }}/scoreboard?page={{ paginated.prev_page }}"><i class="fa-solid fa-chevron-left"></i> Previous</a>
+    {% endif %}
+    {% if paginated.has_next %}
+    <a class="button primary" href="/competitions/{{ competition.id }}/scoreboard?page={{ paginated.next_page }}">Next <i class="fa-solid fa-chevron-right"></i></a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

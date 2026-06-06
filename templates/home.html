@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Home · {{ platform_name }}{% endblock %}
+{% block content %}
+<section class="page-section split">
+  <div>
+    <p class="terminal-line">$ scheduler.tick() → rotate(round)</p>
+    <h2>Live CTF Arena</h2>
+    <p>Challenges open in fixed server-time windows. Players see the active round, countdown, downloadable dist files, and live scoreboard.</p>
+  </div>
+  <div class="action-row align-end">
+    <a class="button primary" href="/login"><i class="fa-solid fa-right-to-bracket"></i> Log in</a>
+    <a class="button" href="/register"><i class="fa-solid fa-user-plus"></i> Register</a>
+  </div>
+</section>
+
+<section class="page-section">
+  <div class="split">
+    <div>
+      <h2>recent CTFs</h2>
+      <p class="muted">Showing latest {{ competitions|length }} of {{ competition_count }}.</p>
+    </div>
+    {% if competition_count > preview_limit %}
+    <div class="action-row align-end">
+      <a class="button" href="/competitions">SHOW MORE</a>
+    </div>
+    {% endif %}
+  </div>
+  {% if competitions %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Competition</th><th>Organizer</th><th>Starts</th><th>Ends</th><th>Challenges</th><th>Players</th><th>Status</th></tr>
+      </thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+        {% for comp in competitions %}
+        <tr>
+          <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a><div class="muted">{{ comp.summary }}</div></td>
+          <td><a href="/users/{{ comp.owner_name }}">{{ comp.owner_name }}</a></td>
+          <td>{{ comp.starts_at|local_time }}</td>
+          <td>{{ comp.ends_at|local_time }}</td>
+          <td>{{ comp.challenge_count }}</td>
+          <td>{{ comp.player_count }}</td>
+          <td>{% if comp.live_title %}<span class="badge live">LIVE</span> {{ comp.live_title }}{% else %}<span class="badge">scheduled</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No approved competitions yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,17 @@
+services:
+  ctf-platform:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8000
+      APP_TZ: Asia/Taipei
+      CTF_DB_PATH: /app/instance/ctf_platform.sqlite3
+      CTF_SECRET_PATH: /app/instance/secret.key
+      CTF_UPLOAD_DIR: /app/uploads
+      CTF_MAX_UPLOAD_BYTES: "52428800"
+    volumes:
+      - ./instance:/app/instance
+      - ./uploads:/app/uploads
+    restart: unless-stopped

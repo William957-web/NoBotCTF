@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}{{ profile_user.username }} · {{ platform_name }}{% endblock %}
+{% block content %}
+<section class="page-section split">
+  <div>
+    <p class="terminal-line">$ user.profile /{{ profile_user.username }}</p>
+    <h2>{{ profile_user.display_name or profile_user.username }}</h2>
+    <p class="muted">
+      @{{ profile_user.username }} · role={{ profile_user.role }} · joined={{ profile_user.created_at|local_time }}
+      {% if profile_user.affiliation %} · {{ profile_user.affiliation }}{% endif %}
+    </p>
+    {% if profile_user.bio %}
+    <p>{{ profile_user.bio }}</p>
+    {% endif %}
+    {% if profile_user.website_url %}
+    <p><a href="{{ profile_user.website_url }}">{{ profile_user.website_url }}</a></p>
+    {% endif %}
+  </div>
+  <div class="action-row align-end">
+    {% if can_edit_profile %}
+    <a class="button" href="/users/{{ profile_user.username }}?edit=1"><i class="fa-solid fa-user-pen"></i> Edit profile</a>
+    {% endif %}
+  </div>
+</section>
+
+<section class="page-section metric-grid">
+  <div class="metric">
+    <span class="metric-label">joined CTFs</span>
+    <strong>{{ joined_competitions|length }}</strong>
+  </div>
+  <div class="metric">
+    <span class="metric-label">hosted CTFs</span>
+    <strong>{{ owned_competitions|length }}</strong>
+  </div>
+  <div class="metric">
+    <span class="metric-label">solves</span>
+    <strong>{{ solved_count }}</strong>
+  </div>
+</section>
+
+{% if show_edit %}
+<section class="page-section narrow">
+  <h2>edit profile</h2>
+  <form method="post" action="/profile" class="form-grid">
+    {{ csrf_input() }}
+    <label>Display name
+      <input name="display_name" maxlength="80" value="{{ profile_user.display_name }}">
+    </label>
+    <label>Affiliation
+      <input name="affiliation" maxlength="120" value="{{ profile_user.affiliation }}">
+    </label>
+    <label>Website
+      <input name="website_url" maxlength="500" placeholder="https://..." value="{{ profile_user.website_url }}">
+    </label>
+    <label>Bio
+      <textarea name="bio" rows="5" maxlength="1200">{{ profile_user.bio }}</textarea>
+    </label>
+    <button class="button primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save profile</button>
+  </form>
+</section>
+{% endif %}
+
+<section class="page-section">
+  <h2>placements</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Competition</th><th>Status</th><th>Rank</th><th>Score</th><th>Solves</th><th>Last solve</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for item in placements %}
+        <tr>
+          <td><a href="/competitions/{{ item.competition.id }}">{{ item.competition.title }}</a></td>
+          <td><span class="badge {{ item.competition.status }}">{{ item.competition.status }}</span></td>
+          <td>{% if item.placement %}#{{ item.placement.rank }}{% else %}<span class="muted">unranked</span>{% endif %}</td>
+          <td>{{ item.placement.score if item.placement else 0 }}</td>
+          <td>{{ item.placement.solved_count if item.placement else 0 }}</td>
+          <td>{{ item.placement.last_solve|local_time if item.placement else '-' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="muted">No joined competitions yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="page-section">
+  <h2>joined competitions</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Competition</th><th>Status</th><th>Window</th><th>Challenges</th><th>Players</th><th>Joined</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for comp in joined_competitions %}
+        <tr>
+          <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a></td>
+          <td><span class="badge {{ comp.status }}">{{ comp.status }}</span></td>
+          <td>{{ comp.starts_at|local_time }}<div class="muted">{{ comp.ends_at|local_time }}</div></td>
+          <td>{{ comp.challenge_count }}</td>
+          <td>{{ comp.player_count }}</td>
+          <td>{{ comp.joined_at|local_time }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="muted">No joined competitions yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if owned_competitions %}
+<section class="page-section">
+  <h2>hosted competitions</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Competition</th><th>Status</th><th>Window</th><th>Challenges</th><th>Players</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for comp in owned_competitions %}
+        <tr>
+          <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a></td>
+          <td><span class="badge {{ comp.status }}">{{ comp.status }}</span></td>
+          <td>{{ comp.starts_at|local_time }}<div class="muted">{{ comp.ends_at|local_time }}</div></td>
+          <td>{{ comp.challenge_count }}</td>
+          <td>{{ comp.player_count }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="page-section">
+  <h2>recent submissions</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Time</th><th>Competition</th><th>Challenge</th><th>Result</th></tr></thead>
+      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for sub in recent_submissions %}
+        <tr>
+          <td>{{ sub.created_at|local_time }}</td>
+          <td>{{ sub.competition_title }}</td>
+          <td>{{ sub.challenge_title }}</td>
+          <td><span class="badge {{ sub.result }}">{{ sub.result }}</span></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="muted">No submissions yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
