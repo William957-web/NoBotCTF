@@ -416,7 +416,7 @@
             <form method="post" action="/competitions/{{ competition.id }}/hidden-users/{{ user.user_id }}/unhide" class="inline-form">
               {{ csrf_input() }}
               <input type="hidden" name="next" value="/competitions/{{ competition.id }}">
-              <button class="button small" type="submit"><i class="fa-solid fa-user-check"></i> Unhide</button>
+              <button class="button small primary" type="submit"><i class="fa-solid fa-user-check"></i> Reveal</button>
             </form>
           </td>
         </tr>

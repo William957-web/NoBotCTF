@@ -68,4 +68,45 @@
     {% endif %}
   </div>
 </section>
+
+{% if manager %}
+<section class="page-section">
+  <div class="split">
+    <div>
+      <h2>hidden players</h2>
+      <p class="muted">Hidden players are excluded from this public scoreboard and scored solves.</p>
+    </div>
+    <div class="action-row align-end">
+      <input data-list-search="#scoreboard-hidden-users" maxlength="80" placeholder="Search hidden users">
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>User</th><th>Reason</th><th>Hidden by</th><th>Hidden at</th><th>Submissions</th><th></th></tr></thead>
+      <tbody id="scoreboard-hidden-users" data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% set scoreboard_hidden_next = '/competitions/' ~ competition.id ~ '/scoreboard?page=' ~ paginated.page %}
+      {% if q %}{% set scoreboard_hidden_next = scoreboard_hidden_next ~ '&q=' ~ (q|urlencode) %}{% endif %}
+      {% for user in hidden_users %}
+        <tr data-search-item>
+          <td><a href="/users/{{ user.username }}">{{ user.username }}</a><div class="muted">{{ user.email }}</div></td>
+          <td class="wide-cell">{{ user.reason or '-' }}</td>
+          <td>{{ user.hidden_by_name or 'system' }}</td>
+          <td>{{ user.created_at|local_time }}</td>
+          <td>{{ user.submission_count }}</td>
+          <td>
+            <form method="post" action="/competitions/{{ competition.id }}/hidden-users/{{ user.user_id }}/unhide" class="inline-form">
+              {{ csrf_input() }}
+              <input type="hidden" name="next" value="{{ scoreboard_hidden_next }}">
+              <button class="button small primary" type="submit"><i class="fa-solid fa-user-check"></i> Reveal</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="muted">No hidden users.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
 {% endblock %}

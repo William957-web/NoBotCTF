@@ -76,6 +76,7 @@ No Bot!
 - Live API/WebSocket updates respect the scoreboard preview limit and report total ranked players.
 - Organizers can hide players from the scoreboard from the preview or full scoreboard.
 - Hidden players are excluded from public rankings and scored solves.
+- Organizers can reveal hidden players from the full scoreboard or player moderation table.
 
 ### Organizer Moderation
 

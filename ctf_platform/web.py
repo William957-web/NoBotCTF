@@ -1148,6 +1148,22 @@ def competition_submission_rows(conn, competition_id: int, query: str = "", limi
     ).fetchall()
 
 
+def competition_hidden_user_rows(conn, competition_id: int) -> list:
+    return conn.execute(
+        """
+        SELECT hu.*, u.username, u.email, actor.username AS hidden_by_name,
+               (SELECT COUNT(*) FROM submissions s
+                WHERE s.competition_id = hu.competition_id AND s.user_id = hu.user_id) AS submission_count
+        FROM competition_hidden_users hu
+        JOIN users u ON u.id = hu.user_id
+        LEFT JOIN users actor ON actor.id = hu.hidden_by
+        WHERE hu.competition_id = ?
+        ORDER BY hu.created_at DESC
+        """,
+        (competition_id,),
+    ).fetchall()
+
+
 def paginate_rows(rows: list, page: int, page_size: int = COMPETITION_PAGE_SIZE) -> dict:
     total = len(rows)
     total_pages = max(1, (total + page_size - 1) // page_size)
@@ -2128,19 +2144,7 @@ def competition_detail(request: Request, comp_id: str) -> Response:
                 """,
                 (comp_id,),
             ).fetchall()
-            hidden_users = conn.execute(
-                """
-                SELECT hu.*, u.username, u.email, actor.username AS hidden_by_name,
-                       (SELECT COUNT(*) FROM submissions s
-                        WHERE s.competition_id = hu.competition_id AND s.user_id = hu.user_id) AS submission_count
-                FROM competition_hidden_users hu
-                JOIN users u ON u.id = hu.user_id
-                LEFT JOIN users actor ON actor.id = hu.hidden_by
-                WHERE hu.competition_id = ?
-                ORDER BY hu.created_at DESC
-                """,
-                (comp_id,),
-            ).fetchall()
+            hidden_users = competition_hidden_user_rows(conn, int(comp_id))
             audit_events = conn.execute(
                 """
                 SELECT a.*, u.username AS actor_name
@@ -2212,11 +2216,14 @@ def competition_scoreboard(request: Request, comp_id: str) -> Response:
     manager = can_manage_competition(request.current_user, competition)
     q = clip(request.query.get("q", ""), 80)
     page = nonnegative_int(request.query.get("page", "1"), 1, 1)
+    hidden_users = []
     with connect() as conn:
         server_now = iso_utc()
         ends_at = competition_end_at(conn, int(comp_id), competition["starts_at"])
         freeze_cutoff = competition_freeze_cutoff(conn, int(comp_id))
         board = filter_scoreboard_rows(scoreboard(conn, int(comp_id), None), q)
+        if manager:
+            hidden_users = competition_hidden_user_rows(conn, int(comp_id))
     return render(
         request,
         "scoreboard.html",
@@ -2228,6 +2235,7 @@ def competition_scoreboard(request: Request, comp_id: str) -> Response:
         ends_at=ends_at,
         q=q,
         manager=manager,
+        hidden_users=hidden_users,
     )
 
 
@@ -2740,7 +2748,7 @@ def competition_unhide_user(request: Request, comp_id: str, user_id: str) -> Res
         conn.execute("DELETE FROM competition_hidden_users WHERE competition_id = ? AND user_id = ?", (comp_id, user_id))
         solved_count = rejudge_competition_solves(conn, int(comp_id))
         audit(conn, request.current_user["id"], "unhide_competition_user", "user", int(user_id), {"competition_id": int(comp_id), "solves": solved_count})
-    return redirect(with_notice(next_path, f"{target['username']} is visible in this competition again."))
+    return redirect(with_notice(next_path, f"{target['username']} is revealed in this competition."))
 
 
 @route("GET", r"/competitions/(?P<comp_id>\d+)/export.json")
