@@ -6,7 +6,7 @@
     <p class="terminal-line">$ challenge.preview /{{ challenge.slug }}</p>
     <h2>{{ challenge.title }}</h2>
     <p class="muted">
-      {{ competition.title }} · #{{ challenge.position }} · {{ challenge.category }} · {{ challenge.points }} pts · {{ challenge.duration_minutes|duration }}
+      {{ competition.title }} · #{{ challenge.position }} · {{ challenge.category }}{% if challenge.tags %} · {{ challenge.tags }}{% endif %} · {{ challenge.points }} pts · {{ challenge.duration_minutes|duration }}
     </p>
     <p class="muted">{{ challenge.opens_at|local_time }} to {{ challenge.closes_at|local_time }}</p>
   </div>

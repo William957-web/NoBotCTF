@@ -42,28 +42,29 @@ USERS = [
 
 CHALLENGES = {
     "running": [
-        ("Packet Warmup", "network", 100, 15, "Inspect the live capture and recover the token from the suspicious DNS request.", "FLAG{dns-live-warmup}", "Look for the longest TXT response.", 0, 8),
-        ("Cookie Jar", "web", 200, 10, "A session cookie is signed incorrectly. Find the role escalation path.", "FLAG{cookie-jar-editor}", "Compare the guest and editor cookies byte by byte.", 20, 10),
-        ("Clock Drift", "misc", 150, 8, "A service accepts timestamps. Abuse the drift and submit the accepted timestamp proof.", "FLAG{server-time-matters}", "The server accepts a small future skew.", 0, 5),
+        ("Packet Warmup", "network", "warmup, dns, pcap", 100, 15, "Inspect the live capture and recover the token from the suspicious DNS request.", "FLAG{dns-live-warmup}", "Look for the longest TXT response.", 0, 8),
+        ("Cookie Jar", "web", "auth, cookie, beginner", 200, 10, "A session cookie is signed incorrectly. Find the role escalation path.", "FLAG{cookie-jar-editor}", "Compare the guest and editor cookies byte by byte.", 20, 10),
+        ("Clock Drift", "misc", "time, api, logic", 150, 8, "A service accepts timestamps. Abuse the drift and submit the accepted timestamp proof.", "FLAG{server-time-matters}", "The server accepts a small future skew.", 0, 5),
     ],
     "upcoming": [
-        ("Starter Portal", "web", 100, 3, "Warmup web challenge for the qualifier.", "FLAG{starter-portal}", "Check robots.txt.", 0, 0),
-        ("Tiny RSA", "crypto", 250, 12, "A tiny RSA modulus was generated with weak primes.", "FLAG{tiny-rsa}", "Factor before decrypting.", 30, 10),
-        ("Memory Strings", "forensics", 150, 10, "Find the secret embedded in a memory dump.", "FLAG{strings-are-not-enough}", "Look around shell history.", 0, 8),
+        ("Starter Portal", "web", "warmup, robots", 100, 3, "Warmup web challenge for the qualifier.", "FLAG{starter-portal}", "Check robots.txt.", 0, 0),
+        ("Tiny RSA", "crypto", "rsa, math", 250, 12, "A tiny RSA modulus was generated with weak primes.", "FLAG{tiny-rsa}", "Factor before decrypting.", 30, 10),
+        ("Memory Strings", "forensics", "memory, strings", 150, 10, "Find the secret embedded in a memory dump.", "FLAG{strings-are-not-enough}", "Look around shell history.", 0, 8),
     ],
     "archived": [
-        ("Archive Login", "web", 100, 7, "The old login endpoint leaked too much information. Review the response and recover the flag.", "FLAG{archive-login-leak}", "The error message changes by account state.", 0, 0),
-        ("Frozen Scoreboard", "misc", 150, 3, "Reconstruct the final visible scoreboard from archived submissions.", "FLAG{frozen-but-fair}", "Freeze time is 20 minutes before end.", 0, 0),
-        ("Layer Cake", "forensics", 200, 9, "Multiple encodings hide the final answer. Peel each layer in order.", "FLAG{layer-cake}", "Start with base64, then compression.", 10, 0),
-        ("Mini VM", "rev", 300, 15, "A small bytecode VM checks the flag. Reverse its instruction set.", "FLAG{mini-vm-opcodes}", "Trace opcode 0x13.", 50, 0),
+        ("Archive Login", "web", "archive, auth, leak", 100, 7, "The old login endpoint leaked too much information. Review the response and recover the flag.", "FLAG{archive-login-leak}", "The error message changes by account state.", 0, 0),
+        ("Frozen Scoreboard", "misc", "scoreboard, archive", 150, 3, "Reconstruct the final visible scoreboard from archived submissions.", "FLAG{frozen-but-fair}", "Freeze time is 20 minutes before end.", 0, 0),
+        ("Layer Cake", "forensics", "encoding, compression", 200, 9, "Multiple encodings hide the final answer. Peel each layer in order.", "FLAG{layer-cake}", "Start with base64, then compression.", 10, 0),
+        ("Mini VM", "rev", "vm, bytecode", 300, 15, "A small bytecode VM checks the flag. Reverse its instruction set.", "FLAG{mini-vm-opcodes}", "Trace opcode 0x13.", 50, 0),
     ],
 }
 
 
-def markdown_body(title: str, category: str, prompt: str, points: int, duration: int) -> str:
+def markdown_body(title: str, category: str, tags: str, prompt: str, points: int, duration: int) -> str:
     return f"""# {title}
 
 **Category:** `{category}`  
+**Tags:** `{tags}`  
 **Points:** `{points}`  
 **Round length:** `{duration} minutes`
 
@@ -210,23 +211,24 @@ def create_competition(conn, user_ids, key, title, slug, summary, owner, starts_
         (comp_id, f"{title} is ready. Watch the live round panel for the current challenge.", user_ids[owner], now),
     )
     cursor = parse_iso(starts_at)
-    for position, (ch_title, category, points, duration, body, flag, hint, hint_cost, hint_unlock) in enumerate(CHALLENGES[key], start=1):
+    for position, (ch_title, category, tags, points, duration, body, flag, hint, hint_cost, hint_unlock) in enumerate(CHALLENGES[key], start=1):
         closes_at = cursor + timedelta(minutes=duration)
         challenge_id = conn.execute(
             """
             INSERT INTO challenges(
-                competition_id, title, slug, category, body, points, flag_type, flag_hash, flag_pattern,
+                competition_id, title, slug, category, tags, body, points, flag_type, flag_hash, flag_pattern,
                 position, duration_minutes, hint_text, hint_cost, hint_unlock_minutes,
                 opens_at, closes_at, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'static', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'static', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 comp_id,
                 ch_title,
                 web.unique_challenge_slug(conn, comp_id, "", ch_title),
                 category,
-                markdown_body(ch_title, category, body, points, duration),
+                web.normalize_tags(tags),
+                markdown_body(ch_title, category, tags, body, points, duration),
                 points,
                 hash_flag(flag),
                 position,

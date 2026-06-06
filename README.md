@@ -33,7 +33,8 @@ No Bot!
 - Challenge scheduling uses only `duration_minutes`; `opens_at` and `closes_at` are derived from competition start time plus challenge order.
 - Challenge order can be changed by drag-and-drop.
 - Markdown challenge statements rendered through sanitized HTML.
-- Categories, points, hints, hint costs, and hint unlock timing.
+- Category plus comma-separated category tags.
+- Points, hints, hint costs, and hint unlock timing.
 - Static flag validation.
 - Regex flag validation with full-match behavior.
 - Per-challenge dist file upload.
@@ -61,7 +62,8 @@ No Bot!
 - Buttons are visually distinct from text links.
 - Repeated lists use compact previews with SHOW MORE / pagination patterns where appropriate.
 - Live challenge panel highlights only the active round while a CTF is running.
-- Archived challenge cards show full Markdown body, hints, and dist downloads.
+- Visible challenge lists show compact rows: challenge title, tags, and duration.
+- Challenge rows expand on click to show Markdown body, windows, hints, dist downloads, and organizer actions.
 - Responsive tables and action rows for desktop and smaller screens.
 
 ### Scoreboard
@@ -188,6 +190,7 @@ Additional player accounts are seeded so the running CTF scoreboard has more tha
 - 10 challenges.
 - Challenge round lengths from 3 to 15 minutes.
 - Markdown challenge statements for every demo challenge.
+- Category tags for every demo challenge.
 - One ZIP dist file per demo challenge.
 - Demo registrations, solves, submissions, announcements, profiles, and collaboration links.
 - A running CTF with 15 ranked players, so the competition detail page shows top 12 and the full scoreboard page shows the rest.

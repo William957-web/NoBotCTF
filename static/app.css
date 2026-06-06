@@ -1,9 +1,3 @@
-@font-face {
-  font-family: "Meslo LG";
-  src: url("/theme/lib/meslo-LG/MesloLGM-Regular.ttf") format("truetype");
-  font-weight: 400;
-}
-
 :root {
   --bg: #1d1f21;
   --bg-soft: #232629;
@@ -18,6 +12,52 @@
   --warn: #e5c07b;
   --info: #61afef;
 }
+
+.fa-solid,
+.fa {
+  display: inline-block;
+  width: 1.1em;
+  text-align: center;
+  font-style: normal;
+  line-height: 1;
+}
+
+.fa-flag::before { content: "!"; }
+.fa-volume-xmark::before { content: "x"; }
+.fa-volume-high::before { content: ">"; }
+.fa-box-archive::before { content: "#"; }
+.fa-check::before { content: "v"; }
+.fa-floppy-disk::before { content: "s"; }
+.fa-key::before { content: "*"; }
+.fa-user-check::before { content: "+"; }
+.fa-user-slash::before { content: "-"; }
+.fa-xmark::before { content: "x"; }
+.fa-arrow-left::before { content: "<"; }
+.fa-file-arrow-down::before { content: "d"; }
+.fa-pen-to-square::before { content: "e"; }
+.fa-ban::before { content: "/"; }
+.fa-book-open::before { content: "b"; }
+.fa-bullhorn::before { content: "!"; }
+.fa-clock::before { content: "t"; }
+.fa-copy::before { content: "c"; }
+.fa-eye::before { content: "o"; }
+.fa-file-export::before { content: "x"; }
+.fa-grip-lines::before { content: "="; }
+.fa-link::before { content: "@"; }
+.fa-paper-plane::before { content: ">"; }
+.fa-person-running::before { content: "r"; }
+.fa-plus::before { content: "+"; }
+.fa-ranking-star::before { content: "#"; }
+.fa-trash::before { content: "-"; }
+.fa-wifi::before { content: "~"; }
+.fa-file-import::before { content: "i"; }
+.fa-chevron-left::before { content: "<"; }
+.fa-chevron-right::before { content: ">"; }
+.fa-screwdriver-wrench::before { content: "*"; }
+.fa-user-pen::before { content: "u"; }
+.fa-right-to-bracket::before { content: ">"; }
+.fa-user-plus::before { content: "+"; }
+.fa-magnifying-glass::before { content: "?"; }
 
 *,
 *::before,
@@ -629,6 +669,99 @@ th {
   text-decoration: none;
 }
 
+.challenge-accordion-list {
+  display: grid;
+  gap: .6rem;
+}
+
+.challenge-accordion-item {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(12, 12, 12, .32);
+  overflow: hidden;
+}
+
+.challenge-accordion-item[open] {
+  border-color: rgba(55, 220, 164, .45);
+}
+
+.challenge-summary {
+  display: grid;
+  grid-template-columns: minmax(13rem, 1.3fr) minmax(10rem, 1fr) auto;
+  gap: .8rem;
+  align-items: center;
+  padding: .85rem 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.challenge-summary::-webkit-details-marker {
+  display: none;
+}
+
+.challenge-summary::after {
+  content: "+";
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.challenge-accordion-item[open] .challenge-summary::after {
+  content: "-";
+}
+
+.challenge-summary-main {
+  display: inline-flex;
+  min-width: 0;
+  gap: .55rem;
+  align-items: center;
+}
+
+.challenge-summary-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.challenge-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  align-items: center;
+}
+
+.tag-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 9rem;
+  min-height: 1.35rem;
+  padding: .12rem .42rem;
+  border: 1px solid rgba(144, 141, 141, .38);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.tag-badge.primary {
+  color: var(--text);
+  border-color: rgba(55, 220, 164, .45);
+}
+
+.challenge-summary-duration {
+  min-width: 4.5rem;
+  color: var(--text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.challenge-expanded {
+  border-top: 1px dashed rgba(144, 141, 141, .36);
+  padding: 1rem;
+}
+
 .challenge-locked-panel {
   border-top-color: rgba(229, 192, 123, .65);
 }
@@ -703,7 +836,12 @@ tr.dragging {
   opacity: .45;
 }
 
-tr.drop-target td {
+.dragging {
+  opacity: .45;
+}
+
+tr.drop-target td,
+.challenge-accordion-item.drop-target {
   border-top: 1px solid var(--link);
 }
 
@@ -773,6 +911,18 @@ tr.drop-target td {
 
   .health-panel {
     justify-content: flex-start;
+  }
+
+  .challenge-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .challenge-summary::after {
+    justify-self: start;
+  }
+
+  .challenge-summary-duration {
+    text-align: left;
   }
 
   .pagination-row {

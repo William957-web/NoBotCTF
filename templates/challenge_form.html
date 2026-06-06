@@ -17,8 +17,16 @@
       <label>Category
         <input name="category" maxlength="40" value="{{ form.category if form else (challenge.category if challenge else 'web') }}">
       </label>
+      <label>Category tags
+        <input name="tags" maxlength="240" placeholder="warmup, auth, beginner" value="{{ form.tags if form else (challenge.tags if challenge else '') }}">
+      </label>
+    </div>
+    <div class="two-col">
       <label>Points
         <input name="points" type="number" min="1" required value="{{ form.points if form else (challenge.points if challenge else 100) }}">
+      </label>
+      <label>Duration minutes
+        <input name="duration_minutes" type="number" min="1" required value="{{ form.duration_minutes if form else default_duration }}">
       </label>
     </div>
     <label>Challenge statement <span class="muted">Markdown</span>
@@ -39,9 +47,6 @@
     </label>
     <label>Dist file <span class="muted">{% if challenge %}optional; a new upload becomes the latest download{% else %}optional{% endif %}</span>
       <input name="dist_file" type="file">
-    </label>
-    <label>Duration minutes
-      <input name="duration_minutes" type="number" min="1" required value="{{ form.duration_minutes if form else default_duration }}">
     </label>
     <div class="form-subsection">
       <h3>hint</h3>

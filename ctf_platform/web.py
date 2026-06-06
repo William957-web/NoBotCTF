@@ -373,6 +373,25 @@ def form_text(request: Request, name: str, limit: int = 4000) -> str:
     return clip(request.form.get(name, ""), limit)
 
 
+def normalize_tags(value: str, limit: int = 8) -> str:
+    tags: list[str] = []
+    seen: set[str] = set()
+    for raw in re.split(r"[,;#]+", value):
+        tag = re.sub(r"\s+", "-", raw.strip())
+        tag = re.sub(r"[^A-Za-z0-9._+\-]+", "", tag).strip("._+-")
+        if not tag:
+            continue
+        clipped = clip(tag, 32)
+        key = clipped.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        tags.append(clipped)
+        if len(tags) >= limit:
+            break
+    return ", ".join(tags)
+
+
 def normalize_team_mode(value: str) -> str:
     return value if value in ("individual", "teams") else "individual"
 
@@ -1500,17 +1519,18 @@ def competition_import_post(request: Request) -> Response:
             conn.execute(
                 """
                 INSERT INTO challenges(
-                    competition_id, title, slug, category, body, points, flag_type, flag_hash, flag_pattern,
+                    competition_id, title, slug, category, tags, body, points, flag_type, flag_hash, flag_pattern,
                     position, duration_minutes, hint_text, hint_cost, hint_unlock_minutes,
                     opens_at, closes_at, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     comp_id,
                     challenge_title,
                     challenge_slug,
                     clip(str(item.get("category", "misc")), 40) or "misc",
+                    normalize_tags(str(item.get("tags", ""))),
                     clip(str(item.get("body", "")), 8000) or "Imported challenge body.",
                     nonnegative_int(item.get("points", 100), 100, 1),
                     flag_type,
@@ -1888,6 +1908,7 @@ def challenge_create(request: Request, comp_id: str) -> Response:
         return error_page(request, 403, "You do not have permission to add challenges.")
     title = form_text(request, "title", 120)
     category = form_text(request, "category", 40) or "misc"
+    tags = normalize_tags(request.form.get("tags", ""))
     body = form_text(request, "body", 8000)
     slug = form_text(request, "slug", 80)
     hint_text = form_text(request, "hint_text", 1200)
@@ -1921,17 +1942,18 @@ def challenge_create(request: Request, comp_id: str) -> Response:
         cur = conn.execute(
             """
             INSERT INTO challenges(
-                competition_id, title, slug, category, body, points, flag_type, flag_hash, flag_pattern,
+                competition_id, title, slug, category, tags, body, points, flag_type, flag_hash, flag_pattern,
                 position, duration_minutes, hint_text, hint_cost, hint_unlock_minutes,
                 opens_at, closes_at, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 comp_id,
                 title,
                 final_slug,
                 category,
+                tags,
                 body,
                 points,
                 flag_config["flag_type"],
@@ -1989,6 +2011,7 @@ def challenge_update(request: Request, challenge_id: str) -> Response:
         return error_page(request, 403, "You do not have permission to edit this challenge.")
     title = form_text(request, "title", 120)
     category = form_text(request, "category", 40) or "misc"
+    tags = normalize_tags(request.form.get("tags", ""))
     body = form_text(request, "body", 8000)
     slug = form_text(request, "slug", 80)
     hint_text = form_text(request, "hint_text", 1200)
@@ -2009,7 +2032,7 @@ def challenge_update(request: Request, challenge_id: str) -> Response:
         conn.execute(
             """
             UPDATE challenges
-            SET title = ?, slug = ?, category = ?, body = ?, points = ?,
+            SET title = ?, slug = ?, category = ?, tags = ?, body = ?, points = ?,
                 flag_type = ?, flag_hash = ?, flag_pattern = ?,
                 duration_minutes = ?, hint_text = ?, hint_cost = ?, hint_unlock_minutes = ?, updated_at = ?
             WHERE id = ?
@@ -2018,6 +2041,7 @@ def challenge_update(request: Request, challenge_id: str) -> Response:
                 title,
                 final_slug,
                 category,
+                tags,
                 body,
                 points,
                 flag_config["flag_type"],
@@ -2218,7 +2242,7 @@ def competition_export(request: Request, comp_id: str) -> Response:
     with connect() as conn:
         challenges = conn.execute(
             """
-            SELECT title, slug, category, body, points, flag_type, flag_pattern, position,
+            SELECT title, slug, category, tags, body, points, flag_type, flag_pattern, position,
                    duration_minutes, hint_text, hint_cost, hint_unlock_minutes
             FROM challenges
             WHERE competition_id = ?
@@ -2419,6 +2443,7 @@ def competition_state(request: Request, comp_id: str) -> Response:
             "id": active["id"],
             "title": active["title"],
             "category": active["category"],
+            "tags": active["tags"],
             "points": active["points"],
             "opens_at": active["opens_at"],
             "closes_at": active["closes_at"],
@@ -2446,7 +2471,6 @@ def competition_state(request: Request, comp_id: str) -> Response:
 def serve_static(path: str) -> Response | None:
     roots = {
         "/static/": BASE_DIR / "static",
-        "/theme/": BASE_DIR / "hexo-theme-cactus" / "source",
     }
     for prefix, root in roots.items():
         if path.startswith(prefix):

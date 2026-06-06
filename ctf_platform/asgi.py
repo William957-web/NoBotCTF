@@ -112,6 +112,7 @@ def build_competition_state(comp_id: int) -> dict:
             "id": active["id"],
             "title": active["title"],
             "category": active["category"],
+            "tags": active["tags"],
             "points": active["points"],
             "opens_at": active["opens_at"],
             "closes_at": active["closes_at"],
@@ -201,7 +202,6 @@ class LiveHub:
 hub = LiveHub()
 app = FastAPI(title="Time-windowed CTF Arena")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
-app.mount("/theme", StaticFiles(directory=BASE_DIR / "hexo-theme-cactus" / "source"), name="theme")
 
 
 @app.on_event("startup")

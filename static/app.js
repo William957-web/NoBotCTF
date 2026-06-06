@@ -360,17 +360,17 @@ document.querySelectorAll("[data-copy-button]").forEach((button) => {
   });
 });
 
-document.querySelectorAll("[data-sortable-challenges]").forEach((tbody) => {
+document.querySelectorAll("[data-sortable-challenges]").forEach((container) => {
   let dragged = null;
 
-  const rows = () => Array.from(tbody.querySelectorAll("tr[data-challenge-id]"));
+  const items = () => Array.from(container.querySelectorAll(":scope > [data-challenge-id]"));
   const cleanup = () => {
-    rows().forEach((row) => row.classList.remove("dragging", "drop-target"));
+    items().forEach((item) => item.classList.remove("dragging", "drop-target"));
   };
   const saveOrder = async () => {
-    const order = rows().map((row) => row.dataset.challengeId).join(",");
-    const body = new URLSearchParams({ _csrf: tbody.dataset.csrf || "", order });
-    const response = await fetch(tbody.dataset.reorderUrl, {
+    const order = items().map((item) => item.dataset.challengeId).join(",");
+    const body = new URLSearchParams({ _csrf: container.dataset.csrf || "", order });
+    const response = await fetch(container.dataset.reorderUrl, {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -381,18 +381,18 @@ document.querySelectorAll("[data-sortable-challenges]").forEach((tbody) => {
     }
   };
 
-  tbody.addEventListener("dragstart", (event) => {
-    const row = event.target.closest("tr[data-challenge-id]");
-    if (!row) return;
-    dragged = row;
-    row.classList.add("dragging");
+  container.addEventListener("dragstart", (event) => {
+    const item = event.target.closest("[data-challenge-id]");
+    if (!item || !container.contains(item)) return;
+    dragged = item;
+    item.classList.add("dragging");
     event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", row.dataset.challengeId);
+    event.dataTransfer.setData("text/plain", item.dataset.challengeId);
   });
 
-  tbody.addEventListener("dragover", (event) => {
+  container.addEventListener("dragover", (event) => {
     if (!dragged) return;
-    const target = event.target.closest("tr[data-challenge-id]");
+    const target = event.target.closest("[data-challenge-id]");
     if (!target || target === dragged) return;
     event.preventDefault();
     cleanup();
@@ -400,10 +400,10 @@ document.querySelectorAll("[data-sortable-challenges]").forEach((tbody) => {
     target.classList.add("drop-target");
     const rect = target.getBoundingClientRect();
     const after = event.clientY > rect.top + rect.height / 2;
-    tbody.insertBefore(dragged, after ? target.nextSibling : target);
+    container.insertBefore(dragged, after ? target.nextSibling : target);
   });
 
-  tbody.addEventListener("drop", async (event) => {
+  container.addEventListener("drop", async (event) => {
     if (!dragged) return;
     event.preventDefault();
     cleanup();
@@ -411,7 +411,7 @@ document.querySelectorAll("[data-sortable-challenges]").forEach((tbody) => {
     await saveOrder();
   });
 
-  tbody.addEventListener("dragend", () => {
+  container.addEventListener("dragend", () => {
     cleanup();
     dragged = null;
   });

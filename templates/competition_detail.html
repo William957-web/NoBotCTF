@@ -97,7 +97,7 @@
       <h2>live round</h2>
       {% if active_challenge and competition.status == 'approved' %}
       <p><span class="badge live">LIVE</span> <span data-live-title>{{ active_challenge.title }}</span></p>
-      <p class="muted">{{ active_challenge.category }} · {{ active_challenge.points }} pts · closes {{ active_challenge.closes_at|local_time }}</p>
+      <p class="muted">{{ active_challenge.category }}{% if active_challenge.tags %} · {{ active_challenge.tags }}{% endif %} · {{ active_challenge.points }} pts · closes {{ active_challenge.closes_at|local_time }}</p>
       {% else %}
       <p><span class="badge">idle</span> No challenge is open right now.</p>
       {% endif %}
@@ -196,12 +196,12 @@
 <section class="page-section">
   <div class="split">
     <div>
-      <h2>{% if public_archive %}archived schedule{% else %}schedule{% endif %}</h2>
+      <h2>{% if public_archive %}challenge archive{% else %}challenges{% endif %}</h2>
       <p class="muted">
         {% if public_archive %}
-        This CTF is archived, so every challenge is visible.
+        This CTF is archived, so every challenge is visible. Open a row to inspect the full challenge.
         {% else %}
-        Challenge windows are derived from start time plus ordered durations.
+        Challenge windows are derived from start time plus ordered durations. Open a row to inspect details.
         {% endif %}
       </p>
     </div>
@@ -214,44 +214,68 @@
   {% if competition.rules %}
   <pre>{{ competition.rules }}</pre>
   {% endif %}
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          {% if manager %}<th></th>{% endif %}
-          <th>Order</th><th>Challenge</th><th>Duration</th><th>Window</th><th>Category</th><th>Points</th><th>Solves</th><th>Hint</th><th>Dist</th><th>Status</th>{% if manager %}<th></th>{% endif %}
-        </tr>
-      </thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}" {% if manager %}data-sortable-challenges data-reorder-url="/competitions/{{ competition.id }}/challenges/reorder" data-csrf="{{ request.csrf_token }}"{% endif %}>
-      {% for ch in visible_challenges %}
-        {% set is_live = ch.opens_at <= server_now and ch.closes_at > server_now %}
-        <tr {% if manager %}draggable="true" data-challenge-id="{{ ch.id }}"{% endif %}>
-          {% if manager %}<td class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-lines"></i></td>{% endif %}
-          <td>{{ ch.position }}</td>
-          <td>{% if collaboration_role %}<a href="/challenges/{{ ch.id }}/preview">{{ ch.title }}</a>{% else %}{{ ch.title }}{% endif %}</td>
-          <td>{{ ch.duration_minutes|duration }}</td>
-          <td>{{ ch.opens_at|local_time }}<div class="muted">{{ ch.closes_at|local_time }}</div></td>
-          <td>{{ ch.category }}</td>
-          <td>{{ ch.points }}</td>
-          <td>{{ ch.solve_count }}</td>
-          <td>{% if ch.hint_text %}<span class="badge ok">hint</span>{% else %}<span class="muted">-</span>{% endif %}</td>
-          <td>{% if ch.dist_file_count %}<span class="badge ok">file</span>{% else %}<span class="muted">-</span>{% endif %}</td>
-          <td>{% if is_live and competition.status == 'approved' %}<span class="badge live">LIVE</span>{% elif ch.closes_at <= server_now %}<span class="badge closed">closed</span>{% else %}<span class="badge pending">scheduled</span>{% endif %}</td>
-          {% if manager %}
-          <td class="action-row">
-            <a class="icon-link" href="/challenges/{{ ch.id }}/edit" title="Edit challenge"><i class="fa-solid fa-pen-to-square"></i></a>
+  <div class="challenge-accordion-list" data-preview-list data-preview-limit="{{ list_preview_limit }}" {% if manager %}data-sortable-challenges data-reorder-url="/competitions/{{ competition.id }}/challenges/reorder" data-csrf="{{ request.csrf_token }}"{% endif %}>
+    {% for ch in visible_challenges %}
+    {% set is_live = ch.opens_at <= server_now and ch.closes_at > server_now %}
+    <details class="challenge-accordion-item" {% if manager %}draggable="true" data-challenge-id="{{ ch.id }}"{% endif %}>
+      <summary class="challenge-summary">
+        <span class="challenge-summary-main">
+          {% if manager %}<span class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-lines"></i></span>{% endif %}
+          <span class="challenge-summary-title">#{{ ch.position }} {{ ch.title }}</span>
+        </span>
+        <span class="challenge-tag-row">
+          <span class="tag-badge primary">{{ ch.category }}</span>
+          {% if ch.tags %}
+            {% for tag in ch.tags.split(',') %}
+            <span class="tag-badge">{{ tag|trim }}</span>
+            {% endfor %}
+          {% endif %}
+        </span>
+        <span class="challenge-summary-duration">{{ ch.duration_minutes|duration }}</span>
+      </summary>
+      <div class="challenge-expanded">
+        <div class="split">
+          <div>
+            <p class="muted">
+              window={{ ch.opens_at|local_time }} to {{ ch.closes_at|local_time }} · {{ ch.points }} pts · solves={{ ch.solve_count }}
+            </p>
+            <p>
+              {% if is_live and competition.status == 'approved' %}<span class="badge live">LIVE</span>{% elif ch.closes_at <= server_now %}<span class="badge closed">closed</span>{% else %}<span class="badge pending">scheduled</span>{% endif %}
+              {% if ch.hint_text %}<span class="badge ok">hint</span>{% endif %}
+              {% if ch.dist_file_count %}<span class="badge ok">dist</span>{% endif %}
+            </p>
+          </div>
+          <div class="action-row align-end">
+            {% if collaboration_role %}
+            <a class="button small" href="/challenges/{{ ch.id }}/preview"><i class="fa-solid fa-eye"></i> Preview</a>
+            {% endif %}
+            {% if manager %}
+            <a class="button small" href="/challenges/{{ ch.id }}/edit"><i class="fa-solid fa-pen-to-square"></i> Edit</a>
             <form method="post" action="/challenges/{{ ch.id }}/delete" class="inline-form">
               {{ csrf_input() }}
-              <button class="icon-button danger" type="submit" title="Delete challenge"><i class="fa-solid fa-trash"></i></button>
+              <button class="button small danger" type="submit"><i class="fa-solid fa-trash"></i> Delete</button>
             </form>
-          </td>
-          {% endif %}
-        </tr>
-      {% else %}
-        <tr><td colspan="{% if manager %}12{% else %}10{% endif %}" class="muted">No challenges yet.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
+            {% endif %}
+          </div>
+        </div>
+        <div class="markdown-body">{{ ch.body|markdown_safe }}</div>
+        {% if ch.dist_file_count %}
+        <p class="dist-download">
+          <a class="button" href="/challenges/{{ ch.id }}/dist"><i class="fa-solid fa-file-arrow-down"></i> {{ ch.latest_file_name or 'dist file' }}</a>
+          {% if ch.latest_file_size %}<span class="muted">{{ ch.latest_file_size }} bytes</span>{% endif %}
+        </p>
+        {% endif %}
+        {% if ch.hint_text %}
+        <div class="hint-box">
+          <strong>Hint{% if ch.hint_cost %} · {{ ch.hint_cost }} pts{% endif %}</strong>
+          <p>{{ ch.hint_text }}</p>
+        </div>
+        {% endif %}
+      </div>
+    </details>
+    {% else %}
+    <p class="muted">No challenges yet.</p>
+    {% endfor %}
   </div>
 </section>
 {% else %}
@@ -264,47 +288,6 @@
   {% else %}
   <p class="muted">Challenge details are hidden until this competition is approved or archived.</p>
   {% endif %}
-</section>
-{% endif %}
-
-{% if can_see_all_challenges %}
-<section class="page-section">
-  <h2>{% if public_archive %}challenge archive{% else %}challenge preview set{% endif %}</h2>
-  <div class="archive-challenge-list" data-preview-list data-preview-limit="{{ list_preview_limit }}">
-    {% for ch in visible_challenges %}
-    <article class="challenge-body archive-challenge-card">
-      <div class="split">
-        <div>
-          <h3>#{{ ch.position }} {{ ch.title }}</h3>
-          <p class="muted">{{ ch.category }} · {{ ch.points }} pts · {{ ch.duration_minutes|duration }} · {{ ch.opens_at|local_time }} to {{ ch.closes_at|local_time }}</p>
-        </div>
-        <div class="action-row align-end">
-          {% if collaboration_role %}
-          <a class="button small" href="/challenges/{{ ch.id }}/preview"><i class="fa-solid fa-eye"></i> Preview</a>
-          {% endif %}
-          {% if manager %}
-          <a class="button small" href="/challenges/{{ ch.id }}/edit"><i class="fa-solid fa-pen-to-square"></i> Edit</a>
-          {% endif %}
-        </div>
-      </div>
-      <div class="markdown-body">{{ ch.body|markdown_safe }}</div>
-      {% if ch.dist_file_count %}
-      <p class="dist-download">
-        <a class="button" href="/challenges/{{ ch.id }}/dist"><i class="fa-solid fa-file-arrow-down"></i> {{ ch.latest_file_name or 'dist file' }}</a>
-        {% if ch.latest_file_size %}<span class="muted">{{ ch.latest_file_size }} bytes</span>{% endif %}
-      </p>
-      {% endif %}
-      {% if ch.hint_text %}
-      <div class="hint-box">
-        <strong>Hint{% if ch.hint_cost %} · {{ ch.hint_cost }} pts{% endif %}</strong>
-        <p>{{ ch.hint_text }}</p>
-      </div>
-      {% endif %}
-    </article>
-    {% else %}
-    <p class="muted">No challenges yet.</p>
-    {% endfor %}
-  </div>
 </section>
 {% endif %}
 

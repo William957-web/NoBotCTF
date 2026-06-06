@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS challenges (
     title TEXT NOT NULL,
     slug TEXT NOT NULL COLLATE NOCASE,
     category TEXT NOT NULL DEFAULT 'misc',
+    tags TEXT NOT NULL DEFAULT '',
     body TEXT NOT NULL,
     points INTEGER NOT NULL CHECK(points > 0),
     flag_type TEXT NOT NULL DEFAULT 'static'
@@ -273,6 +274,8 @@ def migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE challenges ADD COLUMN flag_type TEXT NOT NULL DEFAULT 'static'")
     if "flag_pattern" not in challenge_columns:
         conn.execute("ALTER TABLE challenges ADD COLUMN flag_pattern TEXT")
+    if "tags" not in challenge_columns:
+        conn.execute("ALTER TABLE challenges ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
     if "duration_minutes" not in challenge_columns:
         conn.execute("ALTER TABLE challenges ADD COLUMN duration_minutes INTEGER")
         conn.execute(
