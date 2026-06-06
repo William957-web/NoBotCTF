@@ -4,9 +4,9 @@
     <thead>
       <tr><th>Competition</th><th>Organizer</th><th>Starts</th><th>Ends</th><th>Challenges</th><th>Players</th><th>Status</th></tr>
     </thead>
-    <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+    <tbody {% if competition_table_id is defined %}id="{{ competition_table_id }}"{% endif %} data-preview-list data-preview-limit="{{ list_preview_limit }}">
     {% for comp in competitions %}
-      <tr>
+      <tr data-search-item>
         <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a><div class="muted">{{ comp.summary }}</div></td>
         <td><a href="/users/{{ comp.owner_name }}">{{ comp.owner_name }}</a></td>
         <td>{{ comp.starts_at|local_time }}</td>

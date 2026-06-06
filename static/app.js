@@ -127,7 +127,7 @@ function renderScoreboard(payload) {
     board.innerHTML = '<tr><td colspan="5" class="muted">No solves yet.</td></tr>';
   } else {
     board.innerHTML = payload.scoreboard.map((row, index) => (
-      `<tr><td>${index + 1}</td><td>${userProfileLink(row.username)}</td><td>${row.score}</td><td>${row.solved_count}</td><td>${localTime(row.last_solve)}</td></tr>`
+      `<tr data-search-item><td>${index + 1}</td><td>${userProfileLink(row.username)}</td><td>${row.score}</td><td>${row.solved_count}</td><td>${localTime(row.last_solve)}</td></tr>`
     )).join("");
   }
   const total = Number(payload.scoreboard_total ?? payload.scoreboard.length);
@@ -141,6 +141,7 @@ function renderScoreboard(payload) {
   if (fullLink) {
     fullLink.hidden = total <= shown;
   }
+  refreshListSearchesFor(board);
 }
 
 async function pollLiveState(root) {
@@ -292,12 +293,12 @@ function applyListPreview(root) {
   button.type = "button";
   button.textContent = `SHOW MORE ${limit}/${items.length}`;
   button.addEventListener("click", () => {
-    const expanded = root.dataset.previewExpanded === "1";
-    root.dataset.previewExpanded = expanded ? "0" : "1";
+    const nextExpanded = root.dataset.previewExpanded !== "1";
+    root.dataset.previewExpanded = nextExpanded ? "1" : "0";
     items.slice(limit).forEach((item) => {
-      item.hidden = !expanded;
+      item.hidden = item.dataset.searchHidden === "1" || !nextExpanded;
     });
-    button.textContent = expanded ? `SHOW MORE ${limit}/${items.length}` : `SHOW LESS ${items.length}/${items.length}`;
+    button.textContent = nextExpanded ? `SHOW LESS ${items.length}/${items.length}` : `SHOW MORE ${limit}/${items.length}`;
   });
   const row = document.createElement("div");
   row.className = "preview-more-row";
@@ -323,6 +324,42 @@ if (document.querySelector(".flash")) {
 }
 
 document.querySelectorAll("[data-preview-list]").forEach((root) => applyListPreview(root));
+
+function applyListSearch(input) {
+  const target = document.querySelector(input.dataset.listSearch || "");
+  if (!target) return;
+  const items = () => Array.from(target.querySelectorAll("[data-search-item]"));
+  const sync = () => {
+    const query = input.value.trim().toLowerCase();
+    items().forEach((item) => {
+      const searchHidden = Boolean(query) && !item.textContent.toLowerCase().includes(query);
+      item.dataset.searchHidden = searchHidden ? "1" : "0";
+      if (searchHidden) {
+        item.hidden = true;
+        return;
+      }
+      if (!query && item.dataset.previewHidden === "1" && target.dataset.previewExpanded !== "1") {
+        item.hidden = true;
+        return;
+      }
+      item.hidden = false;
+    });
+  };
+  input._syncListSearch = sync;
+  input.addEventListener("input", sync);
+  sync();
+}
+
+function refreshListSearchesFor(target) {
+  document.querySelectorAll("[data-list-search]").forEach((input) => {
+    const candidate = document.querySelector(input.dataset.listSearch || "");
+    if (candidate === target && typeof input._syncListSearch === "function") {
+      input._syncListSearch();
+    }
+  });
+}
+
+document.querySelectorAll("[data-list-search]").forEach((input) => applyListSearch(input));
 
 document.querySelectorAll("[data-live-state]").forEach((root) => {
   if (!connectLiveState(root)) {

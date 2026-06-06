@@ -19,11 +19,12 @@
       <h2>recent CTFs</h2>
       <p class="muted">Showing latest {{ competitions|length }} of {{ competition_count }}.</p>
     </div>
-    {% if competition_count > preview_limit %}
     <div class="action-row align-end">
+      <input data-list-search="#home-recent-ctfs" maxlength="80" placeholder="Search recent CTFs">
+      {% if competition_count > preview_limit %}
       <a class="button" href="/competitions">SHOW MORE</a>
+      {% endif %}
     </div>
-    {% endif %}
   </div>
   {% if competitions %}
   <div class="table-wrap">
@@ -31,9 +32,9 @@
       <thead>
         <tr><th>Competition</th><th>Organizer</th><th>Starts</th><th>Ends</th><th>Challenges</th><th>Players</th><th>Status</th></tr>
       </thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <tbody id="home-recent-ctfs" data-preview-list data-preview-limit="{{ list_preview_limit }}">
         {% for comp in competitions %}
-        <tr>
+        <tr data-search-item>
           <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a><div class="muted">{{ comp.summary }}</div></td>
           <td><a href="/users/{{ comp.owner_name }}">{{ comp.owner_name }}</a></td>
           <td>{{ comp.starts_at|local_time }}</td>

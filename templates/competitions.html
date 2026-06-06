@@ -4,14 +4,25 @@
 <section class="page-section split">
   <div>
     <h2>competitions</h2>
-    <p class="muted">Running, upcoming, and archived CTFs are separated by server-time schedule.</p>
+    <p class="muted">
+      {% if q %}
+      Search results for "{{ q }}" across running, upcoming, and archived CTFs.
+      {% else %}
+      Running, upcoming, and archived CTFs are separated by server-time schedule.
+      {% endif %}
+    </p>
   </div>
-  {% if current_user and current_user.role in ['organizer', 'admin'] %}
   <div class="action-row align-end">
+    <form method="get" action="/competitions" class="inline-form search-form">
+      <input name="q" value="{{ q }}" maxlength="80" placeholder="Search competitions">
+      <button class="button primary" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+      {% if q %}<a class="button" href="/competitions"><i class="fa-solid fa-xmark"></i> Clear</a>{% endif %}
+    </form>
+    {% if current_user and current_user.role in ['organizer', 'admin'] %}
     <a class="button" href="/competitions/import"><i class="fa-solid fa-file-import"></i> Import</a>
     <a class="button primary" href="/competitions/new"><i class="fa-solid fa-plus"></i> New competition</a>
+    {% endif %}
   </div>
-  {% endif %}
 </section>
 
 {% if browse_section %}
@@ -19,10 +30,10 @@
   <div class="split">
     <div>
       <h2>{{ browse_label }}</h2>
-      <p class="muted">Page {{ paginated.page }} of {{ paginated.total_pages }} · {{ paginated.total }} competitions</p>
+      <p class="muted">Page {{ paginated.page }} of {{ paginated.total_pages }} · {{ paginated.total }} competitions{% if q %} matching "{{ q }}"{% endif %}</p>
     </div>
     <div class="action-row align-end">
-      <a class="button" href="/competitions"><i class="fa-solid fa-arrow-left"></i> Back to overview</a>
+      <a class="button" href="/competitions{% if q %}?q={{ q|urlencode }}{% endif %}"><i class="fa-solid fa-arrow-left"></i> Back to overview</a>
     </div>
   </div>
   {% set competitions = paginated["items"] %}
@@ -30,10 +41,10 @@
   {% include "partials/competition_table.html" %}
   <div class="pagination-row">
     {% if paginated.has_prev %}
-    <a class="button" href="/competitions?section={{ browse_section }}&page={{ paginated.prev_page }}"><i class="fa-solid fa-chevron-left"></i> Previous</a>
+    <a class="button" href="/competitions?section={{ browse_section }}&page={{ paginated.prev_page }}{% if q %}&q={{ q|urlencode }}{% endif %}"><i class="fa-solid fa-chevron-left"></i> Previous</a>
     {% endif %}
     {% if paginated.has_next %}
-    <a class="button primary" href="/competitions?section={{ browse_section }}&page={{ paginated.next_page }}">Next <i class="fa-solid fa-chevron-right"></i></a>
+    <a class="button primary" href="/competitions?section={{ browse_section }}&page={{ paginated.next_page }}{% if q %}&q={{ q|urlencode }}{% endif %}">Next <i class="fa-solid fa-chevron-right"></i></a>
     {% endif %}
   </div>
 </section>
@@ -42,11 +53,11 @@
     <div class="split">
       <div>
         <h2>running CTFs</h2>
-        <p class="muted">Showing latest {{ running_competitions|length }} of {{ section_counts.running }}.</p>
+        <p class="muted">Showing latest {{ running_competitions|length }} of {{ section_counts.running }}{% if q %} matching "{{ q }}"{% endif %}.</p>
       </div>
       {% if section_counts.running > preview_limit %}
       <div class="action-row align-end">
-        <a class="button" href="/competitions?section=running">SHOW MORE</a>
+        <a class="button" href="/competitions?section=running{% if q %}&q={{ q|urlencode }}{% endif %}">SHOW MORE</a>
       </div>
       {% endif %}
     </div>
@@ -59,11 +70,11 @@
     <div class="split">
       <div>
         <h2>upcoming CTFs</h2>
-        <p class="muted">Showing latest {{ upcoming_competitions|length }} of {{ section_counts.upcoming }}.</p>
+        <p class="muted">Showing latest {{ upcoming_competitions|length }} of {{ section_counts.upcoming }}{% if q %} matching "{{ q }}"{% endif %}.</p>
       </div>
       {% if section_counts.upcoming > preview_limit %}
       <div class="action-row align-end">
-        <a class="button" href="/competitions?section=upcoming">SHOW MORE</a>
+        <a class="button" href="/competitions?section=upcoming{% if q %}&q={{ q|urlencode }}{% endif %}">SHOW MORE</a>
       </div>
       {% endif %}
     </div>
@@ -76,11 +87,11 @@
     <div class="split">
       <div>
         <h2>archived CTFs</h2>
-        <p class="muted">Showing latest {{ archived_competitions|length }} of {{ section_counts.archived }}.</p>
+        <p class="muted">Showing latest {{ archived_competitions|length }} of {{ section_counts.archived }}{% if q %} matching "{{ q }}"{% endif %}.</p>
       </div>
       {% if section_counts.archived > preview_limit %}
       <div class="action-row align-end">
-        <a class="button" href="/competitions?section=archived">SHOW MORE</a>
+        <a class="button" href="/competitions?section=archived{% if q %}&q={{ q|urlencode }}{% endif %}">SHOW MORE</a>
       </div>
       {% endif %}
     </div>

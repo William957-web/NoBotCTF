@@ -84,6 +84,19 @@ CREATE TABLE IF NOT EXISTS competition_registrations (
     UNIQUE(competition_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS competition_hidden_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    competition_id INTEGER NOT NULL REFERENCES competitions(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    hidden_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    UNIQUE(competition_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_competition_hidden_users_competition
+    ON competition_hidden_users(competition_id, user_id);
+
 CREATE TABLE IF NOT EXISTS challenges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     competition_id INTEGER NOT NULL REFERENCES competitions(id) ON DELETE CASCADE,
@@ -323,6 +336,19 @@ def migrate(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_competition_collaborators_user
             ON competition_collaborators(user_id, competition_id);
+
+        CREATE TABLE IF NOT EXISTS competition_hidden_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            competition_id INTEGER NOT NULL REFERENCES competitions(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            hidden_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            reason TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            UNIQUE(competition_id, user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_competition_hidden_users_competition
+            ON competition_hidden_users(competition_id, user_id);
 
         CREATE TABLE IF NOT EXISTS competition_announcements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

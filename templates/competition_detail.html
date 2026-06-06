@@ -16,6 +16,10 @@
     <a class="button" href="/competitions/{{ competition.id }}/edit"><i class="fa-solid fa-pen-to-square"></i> Edit competition</a>
     <a class="button primary" href="/competitions/{{ competition.id }}/challenges/new"><i class="fa-solid fa-plus"></i> New challenge</a>
     <a class="button" href="/competitions/{{ competition.id }}/export.json"><i class="fa-solid fa-file-export"></i> Export</a>
+    <form method="post" action="/competitions/{{ competition.id }}/rejudge" class="inline-form">
+      {{ csrf_input() }}
+      <button class="button" type="submit"><i class="fa-solid fa-rotate"></i> Rejudge</button>
+    </form>
     <form method="post" action="/competitions/{{ competition.id }}/submit-review" class="inline-form">
       {{ csrf_input() }}
       <button class="button" type="submit"><i class="fa-solid fa-paper-plane"></i> Submit for review</button>
@@ -64,9 +68,12 @@
 <section class="page-section split">
   <div>
     <h2>announcements</h2>
-    <div data-preview-list data-preview-limit="{{ list_preview_limit }}">
+    {% if announcements %}
+    <p><input data-list-search="#competition-announcements" maxlength="80" placeholder="Search announcements"></p>
+    {% endif %}
+    <div id="competition-announcements" data-preview-list data-preview-limit="{{ list_preview_limit }}">
     {% for item in announcements %}
-    <article class="announcement">
+    <article class="announcement" data-search-item>
       <h3>{{ item.title }}</h3>
       <p>{{ item.body }}</p>
       <p class="muted">{{ item.created_at|local_time }} · {% if item.author_name %}<a href="/users/{{ item.author_name }}">{{ item.author_name }}</a>{% else %}system{% endif %}</p>
@@ -117,7 +124,7 @@
   <article class="challenge-body active-challenge-card">
     <h3>{{ active_challenge.title }}</h3>
     <div class="markdown-body">{{ active_challenge.body|markdown_safe }}</div>
-    {% if active_file and (registered or collaboration_role) %}
+    {% if active_file and ((registered and can_compete) or collaboration_role) %}
     <p class="dist-download">
       <a class="button" href="/challenges/{{ active_challenge.id }}/dist"><i class="fa-solid fa-file-arrow-down"></i> {{ active_file.original_filename }}</a>
       <span class="muted">{{ active_file.size_bytes }} bytes</span>
@@ -134,12 +141,14 @@
       {% endif %}
     {% endif %}
     {% if current_user %}
-      {% if registered %}
+      {% if registered and can_compete %}
       <form method="post" action="/challenges/{{ active_challenge.id }}/submit" class="flag-form">
         {{ csrf_input() }}
         <input name="flag" required autocomplete="off" placeholder="FLAG{...}">
         <button class="button primary" type="submit"><i class="fa-solid fa-flag"></i> Submit</button>
       </form>
+      {% elif not can_compete %}
+      <p class="muted">{{ compete_block_reason }}</p>
       {% else %}
       <p class="muted">Join this competition to submit flags.</p>
       {% endif %}
@@ -165,6 +174,7 @@
       {% if freeze_cutoff %}<p class="muted">Scoreboard is frozen from {{ freeze_cutoff|local_time }} until the competition ends.</p>{% endif %}
     </div>
     <div class="action-row align-end">
+      <input data-list-search="#competition-scoreboard-preview" maxlength="80" placeholder="Search scoreboard">
       <a class="button" data-scoreboard-full-link href="/competitions/{{ competition.id }}/scoreboard" {% if scoreboard_total <= scoreboard|length %}hidden{% endif %}><i class="fa-solid fa-ranking-star"></i> Full scoreboard</a>
       <div class="health-panel">
         <span><i class="fa-solid fa-clock"></i> server {{ server_now|local_time }}</span>
@@ -175,9 +185,9 @@
   <div class="table-wrap">
     <table>
       <thead><tr><th>#</th><th>Player</th><th>Score</th><th>Solves</th><th>Last solve</th></tr></thead>
-      <tbody data-scoreboard-body>
+      <tbody id="competition-scoreboard-preview" data-scoreboard-body>
       {% for row in scoreboard %}
-        <tr>
+        <tr data-search-item>
           <td>{{ loop.index }}</td>
           <td><a href="/users/{{ row.username }}">{{ row.username }}</a></td>
           <td>{{ row.score }}</td>
@@ -207,17 +217,22 @@
     </div>
     {% if competition.writeup_url %}
     <div class="action-row align-end">
+      <input data-list-search="#competition-challenges" maxlength="80" placeholder="Search challenges">
       <a class="button" href="{{ competition.writeup_url }}"><i class="fa-solid fa-book-open"></i> Writeup</a>
+    </div>
+    {% else %}
+    <div class="action-row align-end">
+      <input data-list-search="#competition-challenges" maxlength="80" placeholder="Search challenges">
     </div>
     {% endif %}
   </div>
   {% if competition.rules %}
   <pre>{{ competition.rules }}</pre>
   {% endif %}
-  <div class="challenge-accordion-list" data-preview-list data-preview-limit="{{ list_preview_limit }}" {% if manager %}data-sortable-challenges data-reorder-url="/competitions/{{ competition.id }}/challenges/reorder" data-csrf="{{ request.csrf_token }}"{% endif %}>
+  <div id="competition-challenges" class="challenge-accordion-list" data-preview-list data-preview-limit="{{ list_preview_limit }}" {% if manager %}data-sortable-challenges data-reorder-url="/competitions/{{ competition.id }}/challenges/reorder" data-csrf="{{ request.csrf_token }}"{% endif %}>
     {% for ch in visible_challenges %}
     {% set is_live = ch.opens_at <= server_now and ch.closes_at > server_now %}
-    <details class="challenge-accordion-item" {% if manager %}draggable="true" data-challenge-id="{{ ch.id }}"{% endif %}>
+    <details class="challenge-accordion-item" data-search-item {% if manager %}draggable="true" data-challenge-id="{{ ch.id }}"{% endif %}>
       <summary class="challenge-summary">
         <span class="challenge-summary-main">
           {% if manager %}<span class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-lines"></i></span>{% endif %}
@@ -298,22 +313,25 @@
       <h2>collaboration</h2>
       <p class="muted">Send an invite link to another platform user to edit or preview this competition.</p>
     </div>
-    <form method="post" action="/competitions/{{ competition.id }}/collaboration-invites" class="inline-form control-form">
-      {{ csrf_input() }}
-      <select name="role">
-        <option value="editor">editor</option>
-        <option value="viewer">viewer</option>
-      </select>
-      <input name="expires_days" type="number" min="1" max="365" value="14" title="Expiry days">
-      <button class="button small primary" type="submit"><i class="fa-solid fa-link"></i> Create link</button>
-    </form>
+    <div class="action-row align-end">
+      <input data-list-search="#competition-invites" maxlength="80" placeholder="Search invites">
+      <form method="post" action="/competitions/{{ competition.id }}/collaboration-invites" class="inline-form control-form">
+        {{ csrf_input() }}
+        <select name="role">
+          <option value="editor">editor</option>
+          <option value="viewer">viewer</option>
+        </select>
+        <input name="expires_days" type="number" min="1" max="365" value="14" title="Expiry days">
+        <button class="button small primary" type="submit"><i class="fa-solid fa-link"></i> Create link</button>
+      </form>
+    </div>
   </div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Link</th><th>Role</th><th>Created</th><th>Expires</th><th>Status</th><th></th></tr></thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <tbody id="competition-invites" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for invite in invites %}
-        <tr>
+        <tr data-search-item>
           <td class="wide-cell">
             <input class="copy-field" readonly value="/collaborate/{{ invite.token }}" data-copy-value="/collaborate/{{ invite.token }}">
           </td>
@@ -339,12 +357,15 @@
       </tbody>
     </table>
   </div>
+  {% if collaborators %}
+  <p><input data-list-search="#competition-collaborators" maxlength="80" placeholder="Search collaborators"></p>
+  {% endif %}
   <div class="table-wrap">
     <table>
       <thead><tr><th>User</th><th>Role</th><th>Accepted</th><th>Invited by</th></tr></thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <tbody id="competition-collaborators" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for user in collaborators %}
-        <tr>
+        <tr data-search-item>
           <td><a href="/users/{{ user.username }}">{{ user.username }}</a><div class="muted">{{ user.email }}</div></td>
           <td><span class="badge {{ user.role }}">{{ user.role }}</span></td>
           <td>{{ user.accepted_at|local_time }}</td>
@@ -359,15 +380,66 @@
 </section>
 {% endif %}
 
+{% if manager %}
+<section class="page-section">
+  <div class="split">
+    <div>
+      <h2>player moderation</h2>
+      <p class="muted">Hidden players cannot submit, download live dist files, or appear on the scoreboard.</p>
+    </div>
+    <div class="action-row align-end">
+      <input data-list-search="#competition-hidden-users" maxlength="80" placeholder="Search hidden users">
+      <form method="post" action="/competitions/{{ competition.id }}/hidden-users" class="inline-form control-form">
+        {{ csrf_input() }}
+        <input name="username" maxlength="160" required placeholder="username / email / id">
+        <input name="reason" maxlength="500" placeholder="reason">
+        <button class="button small danger" type="submit"><i class="fa-solid fa-ban"></i> Hide</button>
+      </form>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>User</th><th>Reason</th><th>Hidden by</th><th>Hidden at</th><th>Submissions</th><th></th></tr></thead>
+      <tbody id="competition-hidden-users" data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      {% for user in hidden_users %}
+        <tr data-search-item>
+          <td><a href="/users/{{ user.username }}">{{ user.username }}</a><div class="muted">{{ user.email }}</div></td>
+          <td class="wide-cell">{{ user.reason or '-' }}</td>
+          <td>{{ user.hidden_by_name or 'system' }}</td>
+          <td>{{ user.created_at|local_time }}</td>
+          <td>{{ user.submission_count }}</td>
+          <td>
+            <form method="post" action="/competitions/{{ competition.id }}/hidden-users/{{ user.user_id }}/unhide" class="inline-form">
+              {{ csrf_input() }}
+              <button class="button small" type="submit"><i class="fa-solid fa-user-check"></i> Unhide</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="muted">No hidden users.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
 {% if current_user %}
 <section class="page-section">
-  <h2>my submissions</h2>
+  <div class="split">
+    <div>
+      <h2>my submissions</h2>
+    </div>
+    <div class="action-row align-end">
+      <input data-list-search="#competition-my-submissions" maxlength="80" placeholder="Search my submissions">
+    </div>
+  </div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Time</th><th>Challenge</th><th>Result</th><th>Digest</th></tr></thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <tbody id="competition-my-submissions" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for sub in my_submissions %}
-        <tr>
+        <tr data-search-item>
           <td>{{ sub.created_at|local_time }}</td>
           <td>{{ sub.challenge_title }}</td>
           <td><span class="badge {{ sub.result }}">{{ sub.result }}</span></td>
@@ -384,21 +456,45 @@
 
 {% if manager %}
 <section class="page-section">
-  <h2>recent submissions</h2>
+  <div class="split">
+    <div>
+      <h2>recent submissions</h2>
+    </div>
+    <div class="action-row align-end">
+      <input data-list-search="#competition-recent-submissions" maxlength="80" placeholder="Search submissions">
+    </div>
+  </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Time</th><th>Player</th><th>Challenge</th><th>Result</th><th>Digest</th></tr></thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <thead><tr><th>Time</th><th>Player</th><th>Challenge</th><th>Result</th><th>Digest</th><th></th></tr></thead>
+      <tbody id="competition-recent-submissions" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for sub in recent_submissions %}
-        <tr>
+        <tr data-search-item>
           <td>{{ sub.created_at|local_time }}</td>
-          <td><a href="/users/{{ sub.username }}">{{ sub.username }}</a></td>
+          <td>
+            <a href="/users/{{ sub.username }}">{{ sub.username }}</a>
+            {% if sub.is_hidden %}<div><span class="badge closed">hidden</span></div>{% endif %}
+          </td>
           <td>{{ sub.challenge_title }}</td>
           <td><span class="badge {{ sub.result }}">{{ sub.result }}</span></td>
           <td><code>{{ sub.flag_digest[:12] }}</code></td>
+          <td>
+            {% if sub.is_hidden %}
+            <form method="post" action="/competitions/{{ competition.id }}/hidden-users/{{ sub.user_id }}/unhide" class="inline-form">
+              {{ csrf_input() }}
+              <button class="button small" type="submit"><i class="fa-solid fa-user-check"></i> Unhide</button>
+            </form>
+            {% elif sub.user_role == 'player' %}
+            <form method="post" action="/competitions/{{ competition.id }}/hidden-users/{{ sub.user_id }}/hide" class="inline-form control-form">
+              {{ csrf_input() }}
+              <input name="reason" maxlength="500" placeholder="reason">
+              <button class="button small danger" type="submit"><i class="fa-solid fa-ban"></i> Hide</button>
+            </form>
+            {% endif %}
+          </td>
         </tr>
       {% else %}
-        <tr><td colspan="5" class="muted">No submissions yet.</td></tr>
+        <tr><td colspan="6" class="muted">No submissions yet.</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -406,13 +502,20 @@
 </section>
 
 <section class="page-section">
-  <h2>audit log</h2>
+  <div class="split">
+    <div>
+      <h2>audit log</h2>
+    </div>
+    <div class="action-row align-end">
+      <input data-list-search="#competition-audit-log" maxlength="80" placeholder="Search audit log">
+    </div>
+  </div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Metadata</th></tr></thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <tbody id="competition-audit-log" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for event in audit_events %}
-        <tr>
+        <tr data-search-item>
           <td>{{ event.created_at|local_time }}</td>
           <td>{% if event.actor_name %}<a href="/users/{{ event.actor_name }}">{{ event.actor_name }}</a>{% else %}system{% endif %}</td>
           <td>{{ event.action }}</td>

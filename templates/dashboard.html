@@ -40,14 +40,23 @@
 
 {% if current_user.role in ['organizer', 'admin'] %}
 <section class="page-section">
-  <h2>my competitions</h2>
+  <div class="split">
+    <div>
+      <h2>my competitions</h2>
+    </div>
+    {% if owned_competitions %}
+    <div class="action-row align-end">
+      <input data-list-search="#dashboard-owned-competitions" maxlength="80" placeholder="Search my competitions">
+    </div>
+    {% endif %}
+  </div>
   {% if owned_competitions %}
   <div class="table-wrap">
     <table>
       <thead><tr><th>Name</th><th>Status</th><th>Window</th><th>Challenges</th><th>Updated</th><th></th></tr></thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <tbody id="dashboard-owned-competitions" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for comp in owned_competitions %}
-        <tr>
+        <tr data-search-item>
           <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a></td>
           <td><span class="badge {{ comp.status }}">{{ comp.status }}</span></td>
           <td>{{ comp.starts_at|local_time }}<div class="muted">{{ comp.ends_at|local_time }}</div></td>
@@ -67,13 +76,20 @@
 
 {% if collaborative_competitions %}
 <section class="page-section">
-  <h2>shared with me</h2>
+  <div class="split">
+    <div>
+      <h2>shared with me</h2>
+    </div>
+    <div class="action-row align-end">
+      <input data-list-search="#dashboard-collaborative-competitions" maxlength="80" placeholder="Search shared competitions">
+    </div>
+  </div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Name</th><th>Access</th><th>Status</th><th>Window</th><th>Challenges</th></tr></thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <tbody id="dashboard-collaborative-competitions" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for comp in collaborative_competitions %}
-        <tr>
+        <tr data-search-item>
           <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a></td>
           <td><span class="badge {{ comp.collaboration_role }}">{{ comp.collaboration_role }}</span></td>
           <td><span class="badge {{ comp.status }}">{{ comp.status }}</span></td>
@@ -88,14 +104,23 @@
 {% endif %}
 
 <section class="page-section">
-  <h2>joined competitions</h2>
+  <div class="split">
+    <div>
+      <h2>joined competitions</h2>
+    </div>
+    {% if registrations %}
+    <div class="action-row align-end">
+      <input data-list-search="#dashboard-joined-competitions" maxlength="80" placeholder="Search joined competitions">
+    </div>
+    {% endif %}
+  </div>
   {% if registrations %}
   <div class="table-wrap">
     <table>
       <thead><tr><th>Competition</th><th>Status</th><th>Window</th><th>Joined</th></tr></thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <tbody id="dashboard-joined-competitions" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for comp in registrations %}
-        <tr>
+        <tr data-search-item>
           <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a></td>
           <td><span class="badge {{ comp.status }}">{{ comp.status }}</span></td>
           <td>{{ comp.starts_at|local_time }}<div class="muted">{{ comp.ends_at|local_time }}</div></td>
@@ -116,12 +141,14 @@
       <h2>recent CTFs</h2>
       <p class="muted">Showing latest {{ competitions|length }} of {{ competition_count }}.</p>
     </div>
-    {% if competition_count > preview_limit %}
     <div class="action-row align-end">
+      <input data-list-search="#dashboard-recent-ctfs" maxlength="80" placeholder="Search recent CTFs">
+      {% if competition_count > preview_limit %}
       <a class="button" href="/competitions">SHOW MORE</a>
+      {% endif %}
     </div>
-    {% endif %}
   </div>
+  {% set competition_table_id = 'dashboard-recent-ctfs' %}
   {% include "partials/competition_table.html" %}
 </section>
 {% endblock %}

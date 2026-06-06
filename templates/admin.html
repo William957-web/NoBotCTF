@@ -2,14 +2,28 @@
 {% block title %}Admin · {{ platform_name }}{% endblock %}
 {% block content %}
 <section class="page-section">
-  <p class="terminal-line">$ admin.review --queue</p>
+  <div class="split">
+    <div>
+      <p class="terminal-line">$ admin.review --queue</p>
+      <h2>admin panel</h2>
+      <p class="muted">{% if q %}Filtering admin lists by "{{ q }}".{% else %}Search users, competitions, organizer requests, and review state.{% endif %}</p>
+    </div>
+    <form method="get" action="/admin" class="inline-form search-form">
+      <input name="q" value="{{ q }}" placeholder="Search admin lists">
+      <button class="button primary" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+      {% if q %}<a class="button" href="/admin"><i class="fa-solid fa-xmark"></i> Clear</a>{% endif %}
+    </form>
+  </div>
+</section>
+
+<section class="page-section">
   <h2>organizer applications</h2>
   <div class="table-wrap">
     <table>
       <thead><tr><th>User</th><th>Reason</th><th>Status</th><th>Submitted</th><th>Review</th></tr></thead>
       <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for app in applications %}
-        <tr>
+        <tr data-search-item>
           <td><a href="/users/{{ app.username }}">{{ app.username }}</a><div class="muted">{{ app.email }}</div></td>
           <td class="wide-cell">{{ app.reason }}</td>
           <td><span class="badge {{ app.status }}">{{ app.status }}</span>{% if app.review_note %}<div class="muted">{{ app.review_note }}</div>{% endif %}</td>
@@ -36,13 +50,18 @@
 </section>
 
 <section class="page-section">
-  <h2>competitions</h2>
+  <div class="split">
+    <div>
+      <h2>competitions</h2>
+      <p class="muted">Showing first {{ competition_preview_limit if competitions|length > competition_preview_limit else competitions|length }} of {{ competitions|length }}{% if q %} matching "{{ q }}"{% endif %}.</p>
+    </div>
+  </div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Competition</th><th>Organizer</th><th>Status</th><th>Window</th><th>Mode</th><th>Challenges</th><th>Players</th><th>Review</th></tr></thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <tbody data-preview-list data-preview-limit="{{ competition_preview_limit }}">
       {% for comp in competitions %}
-        <tr>
+        <tr data-search-item>
           <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a><div class="muted">/{{ comp.slug }}</div></td>
           <td><a href="/users/{{ comp.owner_name }}">{{ comp.owner_name }}</a></td>
           <td><span class="badge {{ comp.status }}">{{ comp.status }}</span>{% if comp.review_note %}<div class="muted">{{ comp.review_note }}</div>{% endif %}</td>
@@ -75,7 +94,7 @@
       <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Joined</th><th>Solves</th><th>Manage</th><th>Password</th></tr></thead>
       <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for user in users %}
-        <tr>
+        <tr data-search-item>
           <td><a href="/users/{{ user.username }}">{{ user.username }}</a><div class="muted">{{ user.email }}</div></td>
           <td><span class="badge {{ user.role }}">{{ user.role }}</span></td>
           <td>{% if user.is_active %}<span class="badge ok">active</span>{% else %}<span class="badge danger">disabled</span>{% endif %}</td>

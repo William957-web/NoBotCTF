@@ -58,6 +58,7 @@
 .fa-right-to-bracket::before { content: ">"; }
 .fa-user-plus::before { content: "+"; }
 .fa-magnifying-glass::before { content: "?"; }
+.fa-rotate::before { content: "r"; }
 
 *,
 *::before,
@@ -363,6 +364,12 @@ th {
   align-items: center;
 }
 
+.action-row > input[data-list-search],
+p > input[data-list-search] {
+  width: min(100%, 22rem);
+  min-width: min(100%, 14rem);
+}
+
 .align-end {
   justify-content: flex-end;
 }
@@ -483,6 +490,14 @@ th {
 }
 
 .control-form input[type="password"] {
+  width: 10rem;
+}
+
+.control-form input[name="username"] {
+  width: 13rem;
+}
+
+.control-form input[name="reason"] {
   width: 10rem;
 }
 

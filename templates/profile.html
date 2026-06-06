@@ -61,13 +61,20 @@
 {% endif %}
 
 <section class="page-section">
-  <h2>placements</h2>
+  <div class="split">
+    <div>
+      <h2>placements</h2>
+    </div>
+    <div class="action-row align-end">
+      <input data-list-search="#profile-placements" maxlength="80" placeholder="Search placements">
+    </div>
+  </div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Competition</th><th>Status</th><th>Rank</th><th>Score</th><th>Solves</th><th>Last solve</th></tr></thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <tbody id="profile-placements" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for item in placements %}
-        <tr>
+        <tr data-search-item>
           <td><a href="/competitions/{{ item.competition.id }}">{{ item.competition.title }}</a></td>
           <td><span class="badge {{ item.competition.status }}">{{ item.competition.status }}</span></td>
           <td>{% if item.placement %}#{{ item.placement.rank }}{% else %}<span class="muted">unranked</span>{% endif %}</td>
@@ -84,13 +91,20 @@
 </section>
 
 <section class="page-section">
-  <h2>joined competitions</h2>
+  <div class="split">
+    <div>
+      <h2>joined competitions</h2>
+    </div>
+    <div class="action-row align-end">
+      <input data-list-search="#profile-joined-competitions" maxlength="80" placeholder="Search joined competitions">
+    </div>
+  </div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Competition</th><th>Status</th><th>Window</th><th>Challenges</th><th>Players</th><th>Joined</th></tr></thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <tbody id="profile-joined-competitions" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for comp in joined_competitions %}
-        <tr>
+        <tr data-search-item>
           <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a></td>
           <td><span class="badge {{ comp.status }}">{{ comp.status }}</span></td>
           <td>{{ comp.starts_at|local_time }}<div class="muted">{{ comp.ends_at|local_time }}</div></td>
@@ -108,13 +122,20 @@
 
 {% if owned_competitions %}
 <section class="page-section">
-  <h2>hosted competitions</h2>
+  <div class="split">
+    <div>
+      <h2>hosted competitions</h2>
+    </div>
+    <div class="action-row align-end">
+      <input data-list-search="#profile-hosted-competitions" maxlength="80" placeholder="Search hosted competitions">
+    </div>
+  </div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Competition</th><th>Status</th><th>Window</th><th>Challenges</th><th>Players</th></tr></thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <tbody id="profile-hosted-competitions" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for comp in owned_competitions %}
-        <tr>
+        <tr data-search-item>
           <td><a href="/competitions/{{ comp.id }}">{{ comp.title }}</a></td>
           <td><span class="badge {{ comp.status }}">{{ comp.status }}</span></td>
           <td>{{ comp.starts_at|local_time }}<div class="muted">{{ comp.ends_at|local_time }}</div></td>
@@ -129,13 +150,20 @@
 {% endif %}
 
 <section class="page-section">
-  <h2>recent submissions</h2>
+  <div class="split">
+    <div>
+      <h2>recent submissions</h2>
+    </div>
+    <div class="action-row align-end">
+      <input data-list-search="#profile-recent-submissions" maxlength="80" placeholder="Search submissions">
+    </div>
+  </div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Time</th><th>Competition</th><th>Challenge</th><th>Result</th></tr></thead>
-      <tbody data-preview-list data-preview-limit="{{ list_preview_limit }}">
+      <tbody id="profile-recent-submissions" data-preview-list data-preview-limit="{{ list_preview_limit }}">
       {% for sub in recent_submissions %}
-        <tr>
+        <tr data-search-item>
           <td>{{ sub.created_at|local_time }}</td>
           <td>{{ sub.competition_title }}</td>
           <td>{{ sub.challenge_title }}</td>

@@ -210,6 +210,7 @@ def render(request: Request, template: str, status: int = 200, **context) -> Res
         admin_ready=admin_exists(),
         platform_name=get_platform_name(),
         list_preview_limit=LIST_PREVIEW_LIMIT,
+        competition_preview_limit=COMPETITION_PREVIEW_LIMIT,
         default_scoreboard_preview_limit=SCOREBOARD_PREVIEW_LIMIT,
         **context,
     )
@@ -340,6 +341,40 @@ def can_manage_competition(user, competition) -> bool:
 
 def can_view_competition(user, competition) -> bool:
     return bool(competition and (competition["status"] in ("approved", "archived") or collaboration_role(user, competition)))
+
+
+def competition_collaborator_exists(conn, competition_id: int, user_id: int) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM competition_collaborators WHERE competition_id = ? AND user_id = ?",
+            (competition_id, user_id),
+        ).fetchone()
+    )
+
+
+def competition_user_hidden(conn, competition_id: int, user_id: int) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM competition_hidden_users WHERE competition_id = ? AND user_id = ?",
+            (competition_id, user_id),
+        ).fetchone()
+    )
+
+
+def can_compete_in_competition(conn, user, competition) -> tuple[bool, str]:
+    if not user:
+        return False, "Log in with a player account to compete."
+    if not competition:
+        return False, "Competition not found."
+    if user["role"] != "player":
+        return False, "Organizer and admin accounts cannot compete."
+    if user["id"] == competition["owner_id"]:
+        return False, "Competition organizers cannot compete in their own CTF."
+    if competition_collaborator_exists(conn, competition["id"], user["id"]):
+        return False, "Challenge authors and collaborators cannot compete in this CTF."
+    if competition_user_hidden(conn, competition["id"], user["id"]):
+        return False, "This user is hidden from this CTF."
+    return True, ""
 
 
 def competition_is_archived(competition, ends_at: str | None = None, now: str | None = None) -> bool:
@@ -723,11 +758,11 @@ def challenge_hint_unlocked(challenge, server_now: str) -> bool:
 
 def competition_by_id(comp_id: int):
     return query_one(
-        """
+        f"""
         SELECT competitions.*, users.username AS owner_name,
                COALESCE((SELECT MAX(ch.closes_at) FROM challenges ch WHERE ch.competition_id = competitions.id), competitions.starts_at) AS ends_at,
                (SELECT COUNT(*) FROM challenges ch WHERE ch.competition_id = competitions.id) AS challenge_count,
-               (SELECT COUNT(*) FROM competition_registrations r WHERE r.competition_id = competitions.id) AS player_count
+               ({eligible_player_count_expr("competitions.id", "competitions.owner_id")}) AS player_count
         FROM competitions
         JOIN users ON users.id = competitions.owner_id
         WHERE competitions.id = ?
@@ -772,11 +807,35 @@ def scoreboard_preview_limit_for(competition) -> int:
     return bounded_int(value, SCOREBOARD_PREVIEW_LIMIT, 1, 100)
 
 
+def eligible_player_count_expr(competition_id_expr: str, owner_id_expr: str) -> str:
+    return f"""
+        SELECT COUNT(*)
+        FROM competition_registrations r
+        JOIN users ru ON ru.id = r.user_id
+        WHERE r.competition_id = {competition_id_expr}
+          AND ru.role = 'player'
+          AND ru.is_active = 1
+          AND ru.id != {owner_id_expr}
+          AND NOT EXISTS (
+              SELECT 1 FROM competition_collaborators cc
+              WHERE cc.competition_id = r.competition_id AND cc.user_id = r.user_id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM competition_hidden_users hu
+              WHERE hu.competition_id = r.competition_id AND hu.user_id = r.user_id
+          )
+    """
+
+
 def scoreboard(conn, competition_id: int, limit: int | None = 20):
     competition = conn.execute("SELECT scoring_mode FROM competitions WHERE id = ?", (competition_id,)).fetchone()
     cutoff = competition_freeze_cutoff(conn, competition_id)
     cutoff_clause = "AND solves.created_at <= ?" if cutoff else ""
-    params: list = [competition_id]
+    sub_cutoff_clause = "AND s2.created_at <= ?" if cutoff else ""
+    params: list = []
+    if cutoff:
+        params.append(cutoff)
+    params.append(competition_id)
     if cutoff:
         params.append(cutoff)
     rows = conn.execute(
@@ -784,14 +843,39 @@ def scoreboard(conn, competition_id: int, limit: int | None = 20):
         SELECT solves.user_id, users.username, solves.challenge_id, solves.created_at,
                challenges.points,
                (SELECT COUNT(*) FROM solves s2
-                WHERE s2.challenge_id = solves.challenge_id {("AND s2.created_at <= ?" if cutoff else "")}) AS challenge_solve_count
+                JOIN users u2 ON u2.id = s2.user_id
+                JOIN competitions c2 ON c2.id = s2.competition_id
+                WHERE s2.challenge_id = solves.challenge_id {sub_cutoff_clause}
+                  AND u2.role = 'player'
+                  AND u2.is_active = 1
+                  AND u2.id != c2.owner_id
+                  AND NOT EXISTS (
+                      SELECT 1 FROM competition_collaborators cc2
+                      WHERE cc2.competition_id = s2.competition_id AND cc2.user_id = s2.user_id
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM competition_hidden_users hu2
+                      WHERE hu2.competition_id = s2.competition_id AND hu2.user_id = s2.user_id
+                  )) AS challenge_solve_count
         FROM solves
         JOIN users ON users.id = solves.user_id
         JOIN challenges ON challenges.id = solves.challenge_id
+        JOIN competitions c ON c.id = solves.competition_id
         WHERE solves.competition_id = ? {cutoff_clause}
+          AND users.role = 'player'
+          AND users.is_active = 1
+          AND users.id != c.owner_id
+          AND NOT EXISTS (
+              SELECT 1 FROM competition_collaborators cc
+              WHERE cc.competition_id = solves.competition_id AND cc.user_id = solves.user_id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM competition_hidden_users hu
+              WHERE hu.competition_id = solves.competition_id AND hu.user_id = solves.user_id
+          )
         ORDER BY solves.created_at ASC
         """,
-        tuple(([cutoff] if cutoff else []) + params),
+        tuple(params),
     ).fetchall()
     by_user: dict[int, dict] = {}
     dynamic = bool(competition and competition["scoring_mode"] == "dynamic")
@@ -810,14 +894,110 @@ def scoreboard(conn, competition_id: int, limit: int | None = 20):
     return ranked if limit is None else ranked[:limit]
 
 
+def rejudge_competition_solves(conn, competition_id: int) -> int:
+    conn.execute("DELETE FROM solves WHERE competition_id = ?", (competition_id,))
+    rows = conn.execute(
+        """
+        SELECT s.competition_id, s.challenge_id, s.user_id, s.created_at, ch.points
+        FROM submissions s
+        JOIN challenges ch ON ch.id = s.challenge_id
+        JOIN users u ON u.id = s.user_id
+        JOIN competitions c ON c.id = s.competition_id
+        WHERE s.competition_id = ?
+          AND s.result = 'correct'
+          AND u.role = 'player'
+          AND u.is_active = 1
+          AND u.id != c.owner_id
+          AND NOT EXISTS (
+              SELECT 1 FROM competition_collaborators cc
+              WHERE cc.competition_id = s.competition_id AND cc.user_id = s.user_id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM competition_hidden_users hu
+              WHERE hu.competition_id = s.competition_id AND hu.user_id = s.user_id
+          )
+        ORDER BY s.created_at ASC, s.id ASC
+        """,
+        (competition_id,),
+    ).fetchall()
+    inserted = 0
+    for row in rows:
+        cur = conn.execute(
+            """
+            INSERT OR IGNORE INTO solves(competition_id, challenge_id, user_id, points, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (row["competition_id"], row["challenge_id"], row["user_id"], row["points"], row["created_at"]),
+        )
+        inserted += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+    return inserted
+
+
+def user_competition_activity_ids(conn, user_id: int, competition_id: int | None = None) -> list[int]:
+    if competition_id is not None:
+        return [competition_id]
+    rows = conn.execute(
+        """
+        SELECT competition_id FROM competition_registrations WHERE user_id = ?
+        UNION
+        SELECT competition_id FROM submissions WHERE user_id = ?
+        UNION
+        SELECT competition_id FROM solves WHERE user_id = ?
+        ORDER BY competition_id
+        """,
+        (user_id, user_id, user_id),
+    ).fetchall()
+    return [row["competition_id"] for row in rows]
+
+
+def prune_user_competition_participation(conn, user_id: int, competition_id: int | None = None) -> dict[int, int]:
+    competition_ids = user_competition_activity_ids(conn, user_id, competition_id)
+    if competition_id is None:
+        conn.execute("DELETE FROM competition_registrations WHERE user_id = ?", (user_id,))
+    else:
+        conn.execute(
+            "DELETE FROM competition_registrations WHERE competition_id = ? AND user_id = ?",
+            (competition_id, user_id),
+        )
+    return {comp_id: rejudge_competition_solves(conn, comp_id) for comp_id in competition_ids}
+
+
+def validate_hide_target(conn, competition, target) -> str | None:
+    if target["role"] != "player":
+        return "Only player accounts can be hidden from competition scoring."
+    if target["id"] == competition["owner_id"]:
+        return "Competition owners cannot be hidden."
+    if competition_collaborator_exists(conn, competition["id"], target["id"]):
+        return "Challenge authors and collaborators cannot be hidden."
+    return None
+
+
+def hide_user_in_competition(conn, competition, target, actor_id: int, reason: str) -> int:
+    target_error = validate_hide_target(conn, competition, target)
+    if target_error:
+        raise ValueError(target_error)
+    conn.execute(
+        """
+        INSERT INTO competition_hidden_users(competition_id, user_id, hidden_by, reason, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(competition_id, user_id) DO UPDATE SET
+            hidden_by = excluded.hidden_by,
+            reason = excluded.reason,
+            created_at = excluded.created_at
+        """,
+        (competition["id"], target["id"], actor_id, reason, iso_utc()),
+    )
+    return rejudge_competition_solves(conn, competition["id"])
+
+
 def public_competitions():
     now = iso_utc()
     return query_all(
-        """
+        f"""
         SELECT c.*, u.username AS owner_name,
                COALESCE((SELECT MAX(ch.closes_at) FROM challenges ch WHERE ch.competition_id = c.id), c.starts_at) AS ends_at,
                (SELECT COUNT(*) FROM challenges ch WHERE ch.competition_id = c.id) AS challenge_count,
-               (SELECT COUNT(*) FROM competition_registrations r WHERE r.competition_id = c.id) AS player_count,
+               ({eligible_player_count_expr("c.id", "c.owner_id")}) AS player_count,
                (SELECT title FROM challenges ch
                 WHERE ch.competition_id = c.id AND ch.opens_at <= ? AND ch.closes_at > ?
                 ORDER BY ch.position ASC LIMIT 1) AS live_title
@@ -833,11 +1013,11 @@ def public_competitions():
 def index_competitions():
     now = iso_utc()
     return query_all(
-        """
+        f"""
         SELECT c.*, u.username AS owner_name,
                COALESCE((SELECT MAX(ch.closes_at) FROM challenges ch WHERE ch.competition_id = c.id), c.starts_at) AS ends_at,
                (SELECT COUNT(*) FROM challenges ch WHERE ch.competition_id = c.id) AS challenge_count,
-               (SELECT COUNT(*) FROM competition_registrations r WHERE r.competition_id = c.id) AS player_count,
+               ({eligible_player_count_expr("c.id", "c.owner_id")}) AS player_count,
                (SELECT title FROM challenges ch
                 WHERE ch.competition_id = c.id AND ch.opens_at <= ? AND ch.closes_at > ?
                 ORDER BY ch.position ASC LIMIT 1) AS live_title
@@ -866,6 +1046,25 @@ def competition_sections(rows) -> dict[str, list]:
     upcoming.sort(key=lambda row: row["starts_at"])
     archived.sort(key=lambda row: row["ends_at"], reverse=True)
     return {"running": running, "upcoming": upcoming, "archived": archived}
+
+
+def filter_competition_rows(rows: list, query: str) -> list:
+    if not query:
+        return rows
+    needle = query.lower()
+    keys = ("title", "slug", "summary", "status", "review_note", "owner_name", "team_mode", "scoring_mode")
+    return [
+        row
+        for row in rows
+        if any(needle in str(row[key] if key in row.keys() else "").lower() for key in keys)
+    ]
+
+
+def filter_scoreboard_rows(rows: list, query: str) -> list:
+    if not query:
+        return rows
+    needle = query.lower()
+    return [row for row in rows if needle in str(row["username"]).lower()]
 
 
 def paginate_rows(rows: list, page: int, page_size: int = COMPETITION_PAGE_SIZE) -> dict:
@@ -1159,7 +1358,7 @@ def user_profile(request: Request, username: str) -> Response:
             SELECT c.*,
                    COALESCE((SELECT MAX(ch.closes_at) FROM challenges ch WHERE ch.competition_id = c.id), c.starts_at) AS ends_at,
                    (SELECT COUNT(*) FROM challenges ch WHERE ch.competition_id = c.id) AS challenge_count,
-                   (SELECT COUNT(*) FROM competition_registrations r WHERE r.competition_id = c.id) AS player_count
+                   ({eligible_player_count_expr("c.id", "c.owner_id")}) AS player_count
             FROM competitions c
             WHERE c.owner_id = ? {status_clause}
             ORDER BY c.starts_at DESC
@@ -1171,7 +1370,7 @@ def user_profile(request: Request, username: str) -> Response:
             SELECT c.*, r.created_at AS joined_at,
                    COALESCE((SELECT MAX(ch.closes_at) FROM challenges ch WHERE ch.competition_id = c.id), c.starts_at) AS ends_at,
                    (SELECT COUNT(*) FROM challenges ch WHERE ch.competition_id = c.id) AS challenge_count,
-                   (SELECT COUNT(*) FROM competition_registrations rr WHERE rr.competition_id = c.id) AS player_count
+                   ({eligible_player_count_expr("c.id", "c.owner_id")}) AS player_count
             FROM competition_registrations r
             JOIN competitions c ON c.id = r.competition_id
             WHERE r.user_id = ? {status_clause}
@@ -1251,36 +1450,57 @@ def admin_dashboard(request: Request) -> Response:
     missing = require_roles(request, "admin")
     if missing:
         return missing
+    q = clip(request.query.get("q", ""), 80)
+    like = f"%{q}%"
+    app_filter = ""
+    comp_filter = ""
+    user_filter = ""
+    app_params: tuple = ()
+    comp_params: tuple = ()
+    user_params: tuple = ()
+    if q:
+        app_filter = "WHERE u.username LIKE ? OR u.email LIKE ? OR a.reason LIKE ? OR a.status LIKE ?"
+        comp_filter = "WHERE c.title LIKE ? OR c.slug LIKE ? OR c.summary LIKE ? OR c.status LIKE ? OR u.username LIKE ?"
+        user_filter = "WHERE u.username LIKE ? OR u.email LIKE ? OR u.display_name LIKE ? OR u.affiliation LIKE ? OR u.role LIKE ?"
+        app_params = (like, like, like, like)
+        comp_params = (like, like, like, like, like)
+        user_params = (like, like, like, like, like)
     with connect() as conn:
         applications = conn.execute(
-            """
+            f"""
             SELECT a.*, u.username, u.email
             FROM organizer_applications a
             JOIN users u ON u.id = a.user_id
+            {app_filter}
             ORDER BY CASE a.status WHEN 'pending' THEN 0 ELSE 1 END, a.created_at DESC
-            """
+            """,
+            app_params,
         ).fetchall()
         competitions = conn.execute(
-            """
+            f"""
             SELECT c.*, u.username AS owner_name,
                    COALESCE((SELECT MAX(ch.closes_at) FROM challenges ch WHERE ch.competition_id = c.id), c.starts_at) AS ends_at,
                    (SELECT COUNT(*) FROM challenges ch WHERE ch.competition_id = c.id) AS challenge_count,
-                   (SELECT COUNT(*) FROM competition_registrations r WHERE r.competition_id = c.id) AS player_count
+                   ({eligible_player_count_expr("c.id", "c.owner_id")}) AS player_count
             FROM competitions c
             JOIN users u ON u.id = c.owner_id
+            {comp_filter}
             ORDER BY CASE c.status WHEN 'pending_review' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, c.updated_at DESC
-            """
+            """,
+            comp_params,
         ).fetchall()
         users = conn.execute(
-            """
+            f"""
             SELECT u.*,
                    (SELECT COUNT(*) FROM competition_registrations r WHERE r.user_id = u.id) AS joined_count,
                    (SELECT COUNT(*) FROM solves s WHERE s.user_id = u.id) AS solve_count
             FROM users u
+            {user_filter}
             ORDER BY u.created_at DESC
-            """
+            """,
+            user_params,
         ).fetchall()
-    return render(request, "admin.html", applications=applications, competitions=competitions, users=users)
+    return render(request, "admin.html", applications=applications, competitions=competitions, users=users, q=q)
 
 
 @route("POST", r"/admin/organizer-applications/(?P<app_id>\d+)/review")
@@ -1306,6 +1526,7 @@ def admin_review_application(request: Request, app_id: str) -> Response:
         )
         if decision == "approved":
             conn.execute("UPDATE users SET role = 'organizer' WHERE id = ?", (application["user_id"],))
+            prune_user_competition_participation(conn, application["user_id"])
         audit(conn, request.current_user["id"], f"review_organizer_{decision}", "organizer_application", int(app_id))
     return redirect(with_notice("/admin", "Organizer application updated."))
 
@@ -1356,6 +1577,8 @@ def admin_user_role(request: Request, user_id: str) -> Response:
             if admins <= 1:
                 return redirect(with_error("/admin", "You cannot remove the last active admin."))
         conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
+        if role != "player":
+            prune_user_competition_participation(conn, int(user_id))
         audit(conn, request.current_user["id"], "change_user_role", "user", int(user_id), {"role": role})
     return redirect(with_notice("/admin", "User role updated."))
 
@@ -1375,10 +1598,13 @@ def admin_user_toggle(request: Request, user_id: str) -> Response:
             admins = conn.execute("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND is_active = 1").fetchone()["n"]
             if admins <= 1:
                 return redirect(with_error("/admin", "You cannot disable the last active admin."))
+        affected_competitions = user_competition_activity_ids(conn, int(user_id))
         next_active = 0 if target["is_active"] else 1
         conn.execute("UPDATE users SET is_active = ? WHERE id = ?", (next_active, user_id))
         if not next_active:
             conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        for comp_id in affected_competitions:
+            rejudge_competition_solves(conn, comp_id)
         audit(conn, request.current_user["id"], "toggle_user_active", "user", int(user_id), {"is_active": next_active})
     return redirect(with_notice("/admin", "User status updated."))
 
@@ -1404,6 +1630,7 @@ def admin_user_password(request: Request, user_id: str) -> Response:
 
 @route("GET", r"/competitions")
 def competitions_index(request: Request) -> Response:
+    q = clip(request.query.get("q", ""), 80)
     my_competitions = []
     if request.current_user:
         my_competitions = query_all(
@@ -1417,7 +1644,8 @@ def competitions_index(request: Request) -> Response:
             """,
             (request.current_user["id"],),
         )
-    sections = competition_sections(index_competitions())
+        my_competitions = filter_competition_rows(my_competitions, q)
+    sections = competition_sections(filter_competition_rows(index_competitions(), q))
     section_labels = {
         "running": "running CTFs",
         "upcoming": "upcoming CTFs",
@@ -1440,6 +1668,7 @@ def competitions_index(request: Request) -> Response:
         browse_label=section_labels.get(browse_section),
         paginated=paginated,
         my_competitions=my_competitions,
+        q=q,
     )
 
 
@@ -1691,6 +1920,9 @@ def competition_register(request: Request, comp_id: str) -> Response:
         competition = conn.execute("SELECT * FROM competitions WHERE id = ?", (comp_id,)).fetchone()
         if not competition or competition["status"] != "approved":
             return error_page(request, 404, "No open competition found.")
+        can_compete, reason = can_compete_in_competition(conn, request.current_user, competition)
+        if not can_compete:
+            return redirect(with_error(f"/competitions/{comp_id}", reason))
         if not competition["registration_open"]:
             return redirect(with_error(f"/competitions/{comp_id}", "Registration is closed for this competition."))
         if competition_end_at(conn, int(comp_id), competition["starts_at"]) <= iso_utc():
@@ -1744,7 +1976,10 @@ def competition_detail(request: Request, comp_id: str) -> Response:
         full_board = scoreboard(conn, int(comp_id), None)
         board = full_board[:scoreboard_limit]
         registered = False
+        can_compete = False
+        compete_block_reason = ""
         if request.current_user:
+            can_compete, compete_block_reason = can_compete_in_competition(conn, request.current_user, competition)
             registered = bool(
                 conn.execute(
                     "SELECT 1 FROM competition_registrations WHERE competition_id = ? AND user_id = ?",
@@ -1755,6 +1990,7 @@ def competition_detail(request: Request, comp_id: str) -> Response:
         my_submissions = []
         invites = []
         collaborators = []
+        hidden_users = []
         announcements = conn.execute(
             """
             SELECT a.*, u.username AS author_name
@@ -1770,7 +2006,11 @@ def competition_detail(request: Request, comp_id: str) -> Response:
         if manager:
             recent_submissions = conn.execute(
                 """
-                SELECT s.*, u.username, ch.title AS challenge_title
+                SELECT s.*, u.username, u.role AS user_role, ch.title AS challenge_title,
+                       EXISTS(
+                           SELECT 1 FROM competition_hidden_users hu
+                           WHERE hu.competition_id = s.competition_id AND hu.user_id = s.user_id
+                       ) AS is_hidden
                 FROM submissions s
                 JOIN users u ON u.id = s.user_id
                 JOIN challenges ch ON ch.id = s.challenge_id
@@ -1798,6 +2038,19 @@ def competition_detail(request: Request, comp_id: str) -> Response:
                 LEFT JOIN users inviter ON inviter.id = c.invited_by
                 WHERE c.competition_id = ?
                 ORDER BY c.created_at DESC
+                """,
+                (comp_id,),
+            ).fetchall()
+            hidden_users = conn.execute(
+                """
+                SELECT hu.*, u.username, u.email, actor.username AS hidden_by_name,
+                       (SELECT COUNT(*) FROM submissions s
+                        WHERE s.competition_id = hu.competition_id AND s.user_id = hu.user_id) AS submission_count
+                FROM competition_hidden_users hu
+                JOIN users u ON u.id = hu.user_id
+                LEFT JOIN users actor ON actor.id = hu.hidden_by
+                WHERE hu.competition_id = ?
+                ORDER BY hu.created_at DESC
                 """,
                 (comp_id,),
             ).fetchall()
@@ -1838,7 +2091,9 @@ def competition_detail(request: Request, comp_id: str) -> Response:
         scoreboard_total=len(full_board),
         scoreboard_preview_limit=scoreboard_limit,
         registered=registered,
-        can_register=bool(competition["status"] == "approved" and competition["registration_open"] and ends_at > server_now),
+        can_compete=can_compete,
+        compete_block_reason=compete_block_reason,
+        can_register=bool(can_compete and competition["status"] == "approved" and competition["registration_open"] and ends_at > server_now),
         manager=manager,
         collaboration_role=collab_role,
         competition_phase=competition_phase,
@@ -1850,6 +2105,7 @@ def competition_detail(request: Request, comp_id: str) -> Response:
         my_submissions=my_submissions,
         announcements=announcements,
         collaborators=collaborators,
+        hidden_users=hidden_users,
         invites=invites,
         audit_events=audit_events,
         ends_at=ends_at,
@@ -1865,12 +2121,13 @@ def competition_scoreboard(request: Request, comp_id: str) -> Response:
         return error_page(request, 404, "Competition not found.")
     if not can_view_competition(request.current_user, competition):
         return error_page(request, 404, "Competition not found.")
+    q = clip(request.query.get("q", ""), 80)
     page = nonnegative_int(request.query.get("page", "1"), 1, 1)
     with connect() as conn:
         server_now = iso_utc()
         ends_at = competition_end_at(conn, int(comp_id), competition["starts_at"])
         freeze_cutoff = competition_freeze_cutoff(conn, int(comp_id))
-        board = scoreboard(conn, int(comp_id), None)
+        board = filter_scoreboard_rows(scoreboard(conn, int(comp_id), None), q)
     return render(
         request,
         "scoreboard.html",
@@ -1880,6 +2137,7 @@ def competition_scoreboard(request: Request, comp_id: str) -> Response:
         freeze_cutoff=freeze_cutoff,
         server_now=server_now,
         ends_at=ends_at,
+        q=q,
     )
 
 
@@ -2192,14 +2450,15 @@ def collaboration_accept(request: Request, token: str) -> Response:
                 """,
                 (invite["competition_id"], request.current_user["id"], invite["role"], invite["created_by"], now, now),
             )
-        audit(
-            conn,
-            request.current_user["id"],
-            "accept_collaboration_invite",
-            "competition",
-            invite["competition_id"],
-            {"role": invite["role"]},
-        )
+            prune_user_competition_participation(conn, request.current_user["id"], invite["competition_id"])
+            audit(
+                conn,
+                request.current_user["id"],
+                "accept_collaboration_invite",
+                "competition",
+                invite["competition_id"],
+                {"role": invite["role"]},
+            )
     return redirect(with_notice(f"/competitions/{invite['competition_id']}", f"You can now collaborate on {invite['competition_title']}."))
 
 
@@ -2227,6 +2486,95 @@ def announcement_create(request: Request, comp_id: str) -> Response:
         )
         audit(conn, request.current_user["id"], "create_announcement", "competition", int(comp_id), {"announcement_id": cur.lastrowid})
     return redirect(with_notice(f"/competitions/{comp_id}", "Announcement posted."))
+
+
+@route("POST", r"/competitions/(?P<comp_id>\d+)/rejudge")
+def competition_rejudge(request: Request, comp_id: str) -> Response:
+    missing = require_login(request)
+    if missing:
+        return missing
+    competition = competition_by_id(int(comp_id))
+    if not competition:
+        return error_page(request, 404, "Competition not found.")
+    if not can_manage_competition(request.current_user, competition):
+        return error_page(request, 403, "You do not have permission to rejudge this competition.")
+    with transaction() as conn:
+        solved_count = rejudge_competition_solves(conn, int(comp_id))
+        audit(conn, request.current_user["id"], "rejudge_submissions", "competition", int(comp_id), {"solves": solved_count})
+    return redirect(with_notice(f"/competitions/{comp_id}", f"Rejudged submissions. {solved_count} solves are currently scored."))
+
+
+@route("POST", r"/competitions/(?P<comp_id>\d+)/hidden-users")
+def competition_hide_user_lookup(request: Request, comp_id: str) -> Response:
+    missing = require_login(request)
+    if missing:
+        return missing
+    competition = competition_by_id(int(comp_id))
+    if not competition:
+        return error_page(request, 404, "Competition not found.")
+    if not can_manage_competition(request.current_user, competition):
+        return error_page(request, 403, "You do not have permission to hide users in this competition.")
+    lookup = form_text(request, "username", 160)
+    reason = form_text(request, "reason", 500)
+    if not lookup:
+        return redirect(with_error(f"/competitions/{comp_id}", "Enter a username, email, or user id to hide."))
+    numeric_id = int(lookup) if lookup.isdigit() else -1
+    with transaction() as conn:
+        target = conn.execute(
+            "SELECT * FROM users WHERE username = ? OR email = ? OR id = ?",
+            (lookup, lookup, numeric_id),
+        ).fetchone()
+        if not target:
+            return redirect(with_error(f"/competitions/{comp_id}", "User not found."))
+        try:
+            solved_count = hide_user_in_competition(conn, competition, target, request.current_user["id"], reason)
+        except ValueError as exc:
+            return redirect(with_error(f"/competitions/{comp_id}", str(exc)))
+        audit(conn, request.current_user["id"], "hide_competition_user", "user", target["id"], {"competition_id": int(comp_id), "solves": solved_count})
+    return redirect(with_notice(f"/competitions/{comp_id}", f"{target['username']} is hidden from this competition."))
+
+
+@route("POST", r"/competitions/(?P<comp_id>\d+)/hidden-users/(?P<user_id>\d+)/hide")
+def competition_hide_user(request: Request, comp_id: str, user_id: str) -> Response:
+    missing = require_login(request)
+    if missing:
+        return missing
+    competition = competition_by_id(int(comp_id))
+    if not competition:
+        return error_page(request, 404, "Competition not found.")
+    if not can_manage_competition(request.current_user, competition):
+        return error_page(request, 403, "You do not have permission to hide users in this competition.")
+    reason = form_text(request, "reason", 500)
+    with transaction() as conn:
+        target = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not target:
+            return error_page(request, 404, "User not found.")
+        try:
+            solved_count = hide_user_in_competition(conn, competition, target, request.current_user["id"], reason)
+        except ValueError as exc:
+            return redirect(with_error(f"/competitions/{comp_id}", str(exc)))
+        audit(conn, request.current_user["id"], "hide_competition_user", "user", int(user_id), {"competition_id": int(comp_id), "solves": solved_count})
+    return redirect(with_notice(f"/competitions/{comp_id}", f"{target['username']} is hidden from this competition."))
+
+
+@route("POST", r"/competitions/(?P<comp_id>\d+)/hidden-users/(?P<user_id>\d+)/unhide")
+def competition_unhide_user(request: Request, comp_id: str, user_id: str) -> Response:
+    missing = require_login(request)
+    if missing:
+        return missing
+    competition = competition_by_id(int(comp_id))
+    if not competition:
+        return error_page(request, 404, "Competition not found.")
+    if not can_manage_competition(request.current_user, competition):
+        return error_page(request, 403, "You do not have permission to unhide users in this competition.")
+    with transaction() as conn:
+        target = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not target:
+            return error_page(request, 404, "User not found.")
+        conn.execute("DELETE FROM competition_hidden_users WHERE competition_id = ? AND user_id = ?", (comp_id, user_id))
+        solved_count = rejudge_competition_solves(conn, int(comp_id))
+        audit(conn, request.current_user["id"], "unhide_competition_user", "user", int(user_id), {"competition_id": int(comp_id), "solves": solved_count})
+    return redirect(with_notice(f"/competitions/{comp_id}", f"{target['username']} is visible in this competition again."))
 
 
 @route("GET", r"/competitions/(?P<comp_id>\d+)/export.json")
@@ -2314,6 +2662,7 @@ def challenge_dist_download(request: Request, challenge_id: str) -> Response:
         return redirect(f"/login?next=/competitions/{competition['id']}")
     with connect() as conn:
         registered = False
+        eligible = False
         if request.current_user:
             registered = bool(
                 conn.execute(
@@ -2321,10 +2670,11 @@ def challenge_dist_download(request: Request, challenge_id: str) -> Response:
                     (competition["id"], request.current_user["id"]),
                 ).fetchone()
             )
+            eligible = can_compete_in_competition(conn, request.current_user, competition)[0]
         dist_file = latest_challenge_file(conn, int(challenge_id))
     if not dist_file:
         return error_page(request, 404, "This challenge has no dist file.")
-    if not can_download_dist(request.current_user, competition, challenge, registered):
+    if not can_download_dist(request.current_user, competition, challenge, bool(registered and eligible)):
         return error_page(request, 403, "You cannot download this dist file right now.")
     target = (UPLOAD_DIR / dist_file["stored_filename"]).resolve()
     upload_root = UPLOAD_DIR.resolve()
@@ -2361,6 +2711,10 @@ def submit_flag(request: Request, challenge_id: str) -> Response:
         if not challenge:
             return error_page(request, 404, "Challenge not found.")
         comp_id = challenge["competition_id"]
+        competition = conn.execute("SELECT * FROM competitions WHERE id = ?", (comp_id,)).fetchone()
+        can_compete, reason = can_compete_in_competition(conn, request.current_user, competition)
+        if not can_compete:
+            return redirect(with_error(f"/competitions/{comp_id}", reason))
         registered = conn.execute(
             "SELECT 1 FROM competition_registrations WHERE competition_id = ? AND user_id = ?",
             (comp_id, request.current_user["id"]),

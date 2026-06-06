@@ -7,10 +7,16 @@
     <h2>{{ competition.title }} scoreboard</h2>
     <p class="muted">
       Page {{ paginated.page }} of {{ paginated.total_pages }} · {{ paginated.total }} ranked players
+      {% if q %} matching "{{ q }}"{% endif %}
       {% if freeze_cutoff %} · frozen from {{ freeze_cutoff|local_time }}{% endif %}
     </p>
   </div>
   <div class="action-row align-end">
+    <form method="get" action="/competitions/{{ competition.id }}/scoreboard" class="inline-form search-form">
+      <input name="q" value="{{ q }}" maxlength="80" placeholder="Search players">
+      <button class="button primary" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+      {% if q %}<a class="button" href="/competitions/{{ competition.id }}/scoreboard"><i class="fa-solid fa-xmark"></i> Clear</a>{% endif %}
+    </form>
     <a class="button" href="/competitions/{{ competition.id }}"><i class="fa-solid fa-arrow-left"></i> Back to competition</a>
   </div>
 </section>
@@ -43,10 +49,10 @@
   </div>
   <div class="pagination-row">
     {% if paginated.has_prev %}
-    <a class="button" href="/competitions/{{ competition.id }}/scoreboard?page={{ paginated.prev_page }}"><i class="fa-solid fa-chevron-left"></i> Previous</a>
+    <a class="button" href="/competitions/{{ competition.id }}/scoreboard?page={{ paginated.prev_page }}{% if q %}&q={{ q|urlencode }}{% endif %}"><i class="fa-solid fa-chevron-left"></i> Previous</a>
     {% endif %}
     {% if paginated.has_next %}
-    <a class="button primary" href="/competitions/{{ competition.id }}/scoreboard?page={{ paginated.next_page }}">Next <i class="fa-solid fa-chevron-right"></i></a>
+    <a class="button primary" href="/competitions/{{ competition.id }}/scoreboard?page={{ paginated.next_page }}{% if q %}&q={{ q|urlencode }}{% endif %}">Next <i class="fa-solid fa-chevron-right"></i></a>
     {% endif %}
   </div>
 </section>
