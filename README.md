@@ -1,8 +1,7 @@
 # Time-Windowed CTF Platform
 
-A full-stack CTF operations platform for running time-windowed competitions. It is based on the original proposal in `期中專題提案_限時CTF平台.pptx`, but the current implementation is a complete platform experience: organizers create competitions, players join live rounds, archived CTFs remain readable, admins review and manage the platform, and a seeded live demo can be rebuilt with one command.
-
-The app is implemented with Python, FastAPI/ASGI, Jinja templates, SQLite, vanilla JavaScript, and Docker Compose.
+A full-stack CTF operations platform for running time-windowed competitions.   
+No Bot!
 
 ## Feature Overview
 
